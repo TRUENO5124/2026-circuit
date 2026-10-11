@@ -1,0 +1,28 @@
+{
+  "name": "circuit-learning-assistant",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "test": "npm run build:tools && node dist/scripts/run-tests.js",
+    "test:engine": "python services/engine/tests/test_mna.py && python services/engine/tests/test_pipeline.py",
+    "test:api": "python services/api/tests/test_api.py",
+    "test:python": "npm run test:engine && npm run test:api",
+    "typecheck": "tsc --noEmit",
+    "build:tools": "tsc -p tsconfig.build.json",
+    "build:editor": "npm run build --workspace @circuit/editor",
+    "validate:benchmarks": "npm run build:tools && node dist/scripts/validate-benchmarks.js",
+    "export:schema": "npm run build:tools && node dist/scripts/export-json-schema.js",
+    "check": "npm run typecheck && npm test && npm run test:python && npm run build:editor && npm run validate:benchmarks && npm run export:schema",
+    "dev:editor": "cd packages/editor && npm run dev"
+  },
+  "dependencies": {
+    "zod": "^3.25.76",
+    "zod-to-json-schema": "^3.24.6"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.0"
+  }
+}
