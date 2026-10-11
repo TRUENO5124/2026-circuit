@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(ls -la \"d:\\\\BJTU\\\\2026年大创\\\\\")",
+      "Read(//d/BJTU/**)"
+    ]
+  }
+}

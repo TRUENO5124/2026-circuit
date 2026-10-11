@@ -1,0 +1,118 @@
+{
+  "id": "bench.mos_common_source_001",
+  "title": "MOS common-source small-signal amplifier",
+  "source": {
+    "kind": "synthetic",
+    "note": "Structured benchmark seed; real textbook image refs will be added after user provides photos."
+  },
+  "problemText": "For an NMOS common-source amplifier with drain resistor RD, gate small-signal input vin, and source at ground, derive the midband small-signal voltage gain.",
+  "imageRefs": [],
+  "circuitGraph": {
+    "id": "graph.mos_common_source_001",
+    "version": "0.1.0",
+    "title": "MOS common-source seed graph",
+    "nodes": [
+      { "id": "n_vdd", "label": "VDD" },
+      { "id": "n_drain", "label": "Drain" },
+      { "id": "n_gate", "label": "Gate" },
+      { "id": "n_gnd", "label": "Ground", "kind": "reference" }
+    ],
+    "components": [
+      {
+        "id": "vdd",
+        "definitionId": "source.v_dc",
+        "label": "VDD",
+        "ports": ["p", "n"],
+        "parameters": {
+          "voltage": { "value": 10, "unit": "volt", "source": "benchmark" }
+        },
+        "modelVariant": "ideal_dc_voltage_source"
+      },
+      {
+        "id": "vin",
+        "definitionId": "source.v_ac_small_signal",
+        "label": "vin",
+        "ports": ["p", "n"],
+        "parameters": {
+          "amplitude": { "value": 0.01, "unit": "volt", "source": "benchmark" },
+          "frequency": { "value": 1000, "unit": "hertz", "source": "benchmark" }
+        },
+        "modelVariant": "ideal_ac_small_signal_voltage_source"
+      },
+      {
+        "id": "rd",
+        "definitionId": "passive.resistor",
+        "label": "RD",
+        "ports": ["p", "n"],
+        "parameters": {
+          "resistance": { "value": 5000, "unit": "ohm", "source": "benchmark" }
+        },
+        "modelVariant": "ideal_resistor"
+      },
+      {
+        "id": "m1",
+        "definitionId": "fet.mosfet",
+        "label": "M1",
+        "ports": ["drain", "gate", "source", "bulk"],
+        "parameters": {
+          "transconductance": { "value": 0.002, "unit": "siemens", "source": "benchmark" },
+          "threshold_voltage": { "value": 1.5, "unit": "volt", "source": "benchmark" }
+        },
+        "modelVariant": "n_enhancement"
+      },
+      {
+        "id": "gnd",
+        "definitionId": "reference.ground",
+        "label": "GND",
+        "ports": ["ref"],
+        "parameters": {},
+        "modelVariant": "ideal_ground"
+      }
+    ],
+    "ports": [
+      { "id": "input", "label": "Input", "nodeId": "n_gate", "role": "input" },
+      { "id": "output", "label": "Output", "nodeId": "n_drain", "role": "output" },
+      { "id": "reference", "label": "Reference", "nodeId": "n_gnd", "role": "reference" }
+    ],
+    "connections": [
+      { "id": "c_vdd_p", "nodeId": "n_vdd", "componentId": "vdd", "portId": "p" },
+      { "id": "c_vdd_n", "nodeId": "n_gnd", "componentId": "vdd", "portId": "n" },
+      { "id": "c_vin_p", "nodeId": "n_gate", "componentId": "vin", "portId": "p" },
+      { "id": "c_vin_n", "nodeId": "n_gnd", "componentId": "vin", "portId": "n" },
+      { "id": "c_rd_p", "nodeId": "n_vdd", "componentId": "rd", "portId": "p" },
+      { "id": "c_rd_n", "nodeId": "n_drain", "componentId": "rd", "portId": "n" },
+      { "id": "c_m1_drain", "nodeId": "n_drain", "componentId": "m1", "portId": "drain" },
+      { "id": "c_m1_gate", "nodeId": "n_gate", "componentId": "m1", "portId": "gate" },
+      { "id": "c_m1_source", "nodeId": "n_gnd", "componentId": "m1", "portId": "source" },
+      { "id": "c_m1_bulk", "nodeId": "n_gnd", "componentId": "m1", "portId": "bulk" },
+      { "id": "c_gnd_ref", "nodeId": "n_gnd", "componentId": "gnd", "portId": "ref" }
+    ],
+    "metadata": {
+      "topic": "mos_common_source_small_signal"
+    },
+    "validationIssues": []
+  },
+  "groundTruth": {
+    "expectedComponentIds": ["vdd", "vin", "rd", "m1", "gnd"],
+    "expectedNodeIds": ["n_vdd", "n_drain", "n_gate", "n_gnd"],
+    "expectedConnectionCount": 11,
+    "equations": [
+      {
+        "id": "eq.gain",
+        "latex": "A_v = -g_m R_D",
+        "variables": ["A_v", "g_m", "R_D"]
+      }
+    ],
+    "expectedResults": [
+      {
+        "id": "result.voltage_gain",
+        "quantity": "midband voltage gain",
+        "expression": "-gm * RD",
+        "unit": "unitless"
+      }
+    ],
+    "acceptedEquivalentExpressions": ["v_out / v_in = -g_m R_D"],
+    "teachingTags": ["mosfet", "common_source", "small_signal"]
+  },
+  "difficultyTags": ["analog_basic", "mosfet", "small_signal"]
+}

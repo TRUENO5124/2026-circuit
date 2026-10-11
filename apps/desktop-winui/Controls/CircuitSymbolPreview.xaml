@@ -1,0 +1,17 @@
+<UserControl
+    x:Class="CircuitAssistant.Controls.CircuitSymbolPreview"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <Viewbox x:Name="RootViewbox" Stretch="Uniform">
+        <Canvas
+            x:Name="SymbolCanvas"
+            Width="100"
+            Height="100"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center" />
+    </Viewbox>
+</UserControl>

@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "CircuitAssistant (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "CircuitAssistant (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

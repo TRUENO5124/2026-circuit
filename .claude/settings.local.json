@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c ' *)",
+      "Bash(python -c ' *)",
+      "Bash(iconv -f gbk -t utf-8)",
+      "Bash(pip install *)",
+      "WebFetch(domain:circuitmath.com)",
+      "WebSearch",
+      "Skill(browse)",
+      "Skill(browse:*)"
+    ]
+  }
+}

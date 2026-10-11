@@ -1,0 +1,5 @@
+sympy>=1.12
+# Lcapy and PySpice are optional — the engine falls back to pure SymPy when they're missing.
+# lcapy>=1.18
+# PySpice>=1.5
+# ngspice  # system package, not pip

@@ -1,0 +1,113 @@
+{
+  "id": "bench.diode_limiter_001",
+  "title": "Diode positive limiter",
+  "source": {
+    "kind": "synthetic",
+    "note": "Structured benchmark seed; real textbook image refs will be added after user provides photos."
+  },
+  "problemText": "Given a silicon diode limiter with input source Vin, series resistor R1, diode D1 to ground, and load resistor RL, identify the clamp behavior and write the key current relation.",
+  "imageRefs": [],
+  "circuitGraph": {
+    "id": "graph.diode_limiter_001",
+    "version": "0.1.0",
+    "title": "Diode limiter seed graph",
+    "nodes": [
+      { "id": "n_in", "label": "Vin" },
+      { "id": "n_out", "label": "Vout" },
+      { "id": "n_gnd", "label": "Ground", "kind": "reference" }
+    ],
+    "components": [
+      {
+        "id": "vin",
+        "definitionId": "source.v_dc",
+        "label": "Vin",
+        "ports": ["p", "n"],
+        "parameters": {
+          "voltage": { "value": 5, "unit": "volt", "source": "benchmark" }
+        },
+        "modelVariant": "ideal_dc_voltage_source"
+      },
+      {
+        "id": "r1",
+        "definitionId": "passive.resistor",
+        "label": "R1",
+        "ports": ["p", "n"],
+        "parameters": {
+          "resistance": { "value": 1000, "unit": "ohm", "source": "benchmark" }
+        },
+        "modelVariant": "ideal_resistor"
+      },
+      {
+        "id": "d1",
+        "definitionId": "diode.standard",
+        "label": "D1",
+        "ports": ["anode", "cathode"],
+        "parameters": {
+          "forward_voltage": { "value": 0.7, "unit": "volt", "source": "benchmark" }
+        },
+        "modelVariant": "constant_voltage_drop"
+      },
+      {
+        "id": "rl",
+        "definitionId": "passive.resistor",
+        "label": "RL",
+        "ports": ["p", "n"],
+        "parameters": {
+          "resistance": { "value": 10000, "unit": "ohm", "source": "benchmark" }
+        },
+        "modelVariant": "ideal_resistor"
+      },
+      {
+        "id": "gnd",
+        "definitionId": "reference.ground",
+        "label": "GND",
+        "ports": ["ref"],
+        "parameters": {},
+        "modelVariant": "ideal_ground"
+      }
+    ],
+    "ports": [
+      { "id": "input", "label": "Input", "nodeId": "n_in", "role": "input" },
+      { "id": "output", "label": "Output", "nodeId": "n_out", "role": "output" },
+      { "id": "reference", "label": "Reference", "nodeId": "n_gnd", "role": "reference" }
+    ],
+    "connections": [
+      { "id": "c_vin_p", "nodeId": "n_in", "componentId": "vin", "portId": "p" },
+      { "id": "c_vin_n", "nodeId": "n_gnd", "componentId": "vin", "portId": "n" },
+      { "id": "c_r1_p", "nodeId": "n_in", "componentId": "r1", "portId": "p" },
+      { "id": "c_r1_n", "nodeId": "n_out", "componentId": "r1", "portId": "n" },
+      { "id": "c_d1_anode", "nodeId": "n_out", "componentId": "d1", "portId": "anode" },
+      { "id": "c_d1_cathode", "nodeId": "n_gnd", "componentId": "d1", "portId": "cathode" },
+      { "id": "c_rl_p", "nodeId": "n_out", "componentId": "rl", "portId": "p" },
+      { "id": "c_rl_n", "nodeId": "n_gnd", "componentId": "rl", "portId": "n" },
+      { "id": "c_gnd_ref", "nodeId": "n_gnd", "componentId": "gnd", "portId": "ref" }
+    ],
+    "metadata": {
+      "topic": "diode_limiter"
+    },
+    "validationIssues": []
+  },
+  "groundTruth": {
+    "expectedComponentIds": ["vin", "r1", "d1", "rl", "gnd"],
+    "expectedNodeIds": ["n_in", "n_out", "n_gnd"],
+    "expectedConnectionCount": 9,
+    "equations": [
+      {
+        "id": "eq.diode_current",
+        "latex": "I_D = \\frac{V_{in}-V_D}{R_1}",
+        "variables": ["I_D", "V_in", "V_D", "R_1"]
+      }
+    ],
+    "expectedResults": [
+      {
+        "id": "result.clamp_voltage",
+        "quantity": "positive clamp voltage",
+        "expression": "approximately 0.7",
+        "unit": "volt"
+      }
+    ],
+    "acceptedEquivalentExpressions": ["V_out ~= V_D when D1 is forward biased"],
+    "teachingTags": ["diode", "limiter", "piecewise_linear"]
+  },
+  "difficultyTags": ["analog_basic", "diode", "piecewise"]
+}

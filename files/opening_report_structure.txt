@@ -1,0 +1,134 @@
+ | 项目名称(方正小标宋简体,44半角)
+[indent:left=,firstLine=1059] [spacing:line=360(auto),before=,after=] | 项目管理单位：(仿宋_GB2312,32半角)    (仿宋_GB2312,32半角)电子信息工程学院(仿宋_GB2312,32半角)                   (仿宋_GB2312,32半角)
+[indent:left=,firstLine=1059] [spacing:line=360(auto),before=,after=] | 项目类型：(仿宋_GB2312,32半角)■(楷体_GB2312,52半角) (宋体,32半角)创新训练项目(仿宋_GB2312,32半角)
+[indent:left=,firstLine=2656] [spacing:line=360(auto),before=,after=] | □ (宋体,32半角)创业训练项目(仿宋_GB2312,32半角)
+[indent:left=,firstLine=2656] [spacing:line=360(auto),before=,after=] | □ (宋体,32半角)创业实践项目(仿宋_GB2312,32半角)
+[indent:left=,firstLine=1059] [spacing:line=360(auto),before=,after=] | 负责学生：(仿宋_GB2312,32半角) (仿宋_GB2312,32半角)王子涵（24211119）(仿宋_GB2312,32半角)          (仿宋_GB2312,32半角)
+[indent:left=,firstLine=1059] [spacing:line=360(auto),before=,after=] | 项目成员：(仿宋_GB2312,32半角) (仿宋_GB2312,32半角)金(仿宋_GB2312,32半角)浩(仿宋_GB2312,32半角)轩（24211085）、刘勃源（(仿宋_GB2312,32半角)24211088(仿宋_GB2312,32半角)）(仿宋_GB2312,32半角)               (仿宋_GB2312,32半角)
+[indent:left=,firstLine=1059] [spacing:line=360(auto),before=,after=] | 指导教师：(仿宋_GB2312,32半角) (仿宋_GB2312,32半角)陈(仿宋_GB2312,32半角)一(仿宋_GB2312,32半角)帅(仿宋_GB2312,32半角)                       (仿宋_GB2312,32半角)
+ | 北京交通大学·本科生院制(黑体,32半角)
+ | 2026年6月
+[spacing:line=480(exact),before=,after=] | 填写须知(楷体_GB2312,36半角,B)
+[indent:left=,firstLine=560] [spacing:line=480(exact),before=,after=] | 一、项目类型(楷体_GB2312,B)
+[indent:left=,firstLine=560] [spacing:line=520(exact),before=,after=] | 1．创新训练项目。由本科生个人或团队承担，在导师指导下自主完成创新性研究项目设计、研究条件的准备和项目实施、数据处理与分析、研究报告撰写、成果（学术）交流等工作的项目。(楷体_GB2312)
+[indent:left=,firstLine=560] [spacing:line=520(exact),before=,after=] | 2．创业训练项目。由本科生团队承担，在导师指导下团队中每个学生在项目实施过程中扮演一个或多个具体的角色，通过编制商业计划书、开展可行性研究、模拟企业运行、撰写创业报告等训练环节的项目。(楷体_GB2312)
+[indent:left=,firstLine=560] [spacing:line=520(exact),before=,after=] | 3．创业实践项目。由学生团队承担，在学校导师和企业导师共同指导下利用前期创新训练项目（或创业训练项目）的成果，提出具有市场前景的创新性产品或者服务，并以此为基础开展创业实践活动的项目。(楷体_GB2312)
+[indent:left=,firstLine=560] [spacing:line=520(exact),before=,after=] | 二、项目立项限制(楷体_GB2312,B)
+[indent:left=,firstLine=560] [spacing:line=520(exact),before=,after=] | 每名学生每年度负责项目限1项，参与项目限2项（(楷体_GB2312)含负责(楷体_GB2312)项目）。项目成员不得超过3人/项，指导教师限1人/项（创业、(楷体_GB2312)合跨领域(楷体_GB2312)等特殊情况增加队员或指导教师需提前向学校单独申请）。(楷体_GB2312)
+[indent:left=,firstLine=560] [spacing:line=520(exact),before=,after=] | 三、报告填写说明(楷体_GB2312,B)
+[indent:left=,firstLine=560] [spacing:line=520(exact),before=,after=] | 1.请按顺序逐项填写表格内容，填写内容必须实事求是，表达明确严谨。空缺项要填“无”。应填的□变成■（或☑）进行标注。(楷体_GB2312)
+[indent:left=,firstLine=560] [spacing:line=520(exact),before=,after=] | 2.填写时可以改变字体大小等，但要确保表格的样式没有被改变；填写完后用A4纸张双面打印，不得随意涂改。(楷体_GB2312)
+[indent:left=,firstLine=560] [spacing:line=520(exact),before=,after=] | 3.申报过程有不明事宜，请与学院教学科或本科生院联系咨询。(楷体_GB2312)
+[indent:left=,firstLine=560] [spacing:line=480(exact),before=,after=] | 注意：本立项报告由团队成员填写、签字，指导教师审核签字后由项目负责人上传大创项目管理系统。(楷体_GB2312)
+ | 一、基本情况(B)
+[spacing:line=240(exact),before=,after=] | 项目名称(华文中宋,24半角)
+[spacing:line=480(exact),before=,after=] | 面向电子电路学习的图像识别与可解释分析辅助系统(24半角)
+[spacing:line=240(exact),before=,after=] | 成果形式(华文中宋,24半角)
+[spacing:line=480(exact),before=,after=] | □实物作品  □发表论文  (24半角)■(楷体_GB2312,40半角)软件程序  □研究报告(24半角)
+[spacing:line=480(exact),before=,after=] | □设计方案  □影音作品  □其他(24半角)         (24半角)（可多选）(24半角)
+[spacing:line=240(exact),before=,after=] | 实施周期(华文中宋,24半角)
+[spacing:line=480(exact),before=,after=] | 一年(24半角)
+[spacing:line=240(exact),before=,after=] | 项(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 目(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 负(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 责(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 人(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 及(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 组(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 员(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 排序(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 学号(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 姓名(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 专业(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 学院(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 联系方式(华文中宋,24半角)
+[spacing:line=480(exact),before=,after=] | 1主持
+[spacing:line=480(exact),before=,after=] | 24211119
+[spacing:line=480(exact),before=,after=] | 王子涵
+[spacing:line=480(exact),before=,after=] | 电子科学与技术
+[spacing:line=480(exact),before=,after=] | 电子信息工程学院
+[spacing:line=480(exact),before=,after=] | 13301290783
+[spacing:line=480(exact),before=,after=] | 2参加
+[spacing:line=480(exact),before=,after=] | 24211085
+[spacing:line=480(exact),before=,after=] | 金浩轩
+[spacing:line=480(exact),before=,after=] | 电子科学与技术
+[spacing:line=480(exact),before=,after=] | 电子信息工程学院
+[spacing:line=480(exact),before=,after=] | 15353509644
+[spacing:line=480(exact),before=,after=] | 3参加
+[spacing:line=480(exact),before=,after=] | 24211088
+[spacing:line=480(exact),before=,after=] | 刘勃源
+[spacing:line=480(exact),before=,after=] | 通信工程
+[spacing:line=480(exact),before=,after=] | 电子信息工程学院
+[spacing:line=480(exact),before=,after=] | 18811253550
+[spacing:line=240(exact),before=,after=] | 指(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 导(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 教(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 师(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 排序(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 教师姓名(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 职称(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 专业领域(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 所在单位(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 联系方式(华文中宋,24半角)
+[spacing:line=480(exact),before=,after=] | 1
+[spacing:line=480(exact),before=,after=] | 陈一帅
+[spacing:line=480(exact),before=,after=] | 副教授
+[spacing:line=480(exact),before=,after=] | 通信工程
+[spacing:line=480(exact),before=,after=] | 电子信息工程学院
+[spacing:line=480(exact),before=,after=] | 13661331682
+[spacing:line=240(exact),before=,after=] | 校(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 外(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 导(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 师(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 排序(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 教师姓名(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 职称(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 专业领域(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 所在单位(华文中宋,24半角)
+[spacing:line=240(exact),before=,after=] | 联系方式(华文中宋,24半角)
+[spacing:line=480(exact),before=,after=] | 1
+[spacing:line=480(exact),before=,after=] | 无
+[spacing:line=480(exact),before=,after=] | -
+[spacing:line=480(exact),before=,after=] | -
+[spacing:line=480(exact),before=,after=] | -
+[spacing:line=480(exact),before=,after=] | -
+ | 二、项目简介(B)
+[indent:left=,firstLine=420] [spacing:line=348(auto),before=,after=120] | 本项目拟结合图像处理、类型化电路拓扑建模、符号计算和教学可视化方法，研发一套面向课程学习的电路智能分析与教学辅助系统。(楷体,22半角)系统以电脑端本地软件为主体，支持手机在同一局域网(楷体,24半角)内扫码(楷体,24半角)拍照上传教材或习题册中的电路图；电脑端完成图像处理、候选拓扑生成、用户校正、自动分析和结果展示(楷体,24半角)。(楷体,24半角)项目既服务于学生完成习题、理解等效模型和整理报告，也具有电路图理解、符号推理和智能教育工具构建方面的研究价值。(楷体,22半角)
+ | 三、立项依据(B)
+[indent:left=,firstLine=120] [spacing:line=(),before=156,after=] | （一）行业研究现状和发展动态(华文中宋,24半角)
+[indent:left=,firstLine=420] [spacing:line=348(auto),before=,after=120] | 现有工具(楷体,24半角)尚不好(楷体,24半角)满足这一场景。Multisim等专业仿真软件功能强大，但主要面向电路设计与实验验证，不侧重课程解题过程、公式推导和知识点讲解；(楷体,24半角)CircuitMath(楷体,22半角) 等工具能进行符号分析和 LaTeX 输出，但通常需要用户手动搭建电路(楷体,22半角)，且计算过程侧重工程实际，与课程内容有出入；拍照(楷体,22半角)搜题软件(楷体,22半角)大多没有正确的答案与之匹配；通用大模型虽然识图能力与文字说明能力强，但缺少可以验证的电路拓扑和符号化的分析流程。(楷体,22半角)
+[indent:left=,firstLine=120] [spacing:line=(),before=156,after=] | （二）主要研究内容(华文中宋,24半角)
+[indent:left=,firstLine=480] [spacing:line=400(exact),before=,after=] | 1、(楷体,24半角)开发网页端的电路图编辑器以实现电路拓扑的修正和元件参数校对和等效电路图的自动生成以及解题步骤的说明(楷体,24半角)
+[indent:left=,firstLine=480] [spacing:line=400(exact),before=,after=] | 2、开发电路的分析引擎，包括符合课程规则的直/交流等效、小信号模型等以及结果的输出(楷体,24半角)
+[indent:left=,firstLine=480] [spacing:line=400(exact),before=,after=] | 3、开发电路图的图像处理部分，将电路拓扑中的元件、节点、回路的识别，以将照片中电路复现到电路编辑器(楷体,24半角)
+[indent:left=,firstLine=480] [spacing:line=400(exact),before=,after=] | 4、建立类型化电路图数据集，以增强软件的电路处理能力(楷体,24半角)
+[indent:left=,firstLine=120] [spacing:line=(),before=156,after=] | （三）创新点与项目特色(华文中宋,24半角)
+[indent:left=,firstLine=480] [spacing:line=400(exact),before=,after=] | 1、(楷体,24半角)开发出一款专门针对(楷体,24半角)电路与模电(楷体,24半角)课程的解题与辅助教学系统。(楷体,24半角)实现从(楷体,24半角)电路图采集 → 拓扑校正 → 符号分析 → 等效电路展示 → 教学解释 → LaTeX导出"的完整闭环，打通从图像到教学的全链路(楷体,24半角)，提升学生的学习效率(楷体,24半角)
+[indent:left=,firstLine=480] [spacing:line=400(exact),before=,after=] | 2(华文中宋,24半角)、(华文中宋,24半角)内置电路仿真分析引擎，(楷体,24半角)课程规则保证分析规范性（符合教学要求），(楷体,24半角)SymPy(楷体,24半角)/(楷体,24半角)Lcapy(楷体,24半角)/SPICE 保证结果可验证性，双重保障。(楷体,24半角)
+ | 四、项目实施方案(B)
+[indent:left=,firstLine=120] [spacing:line=(),before=156,after=] | （一）研究方案(华文中宋,24半角)
+[indent:left=,firstLine=480] [spacing:line=400(exact),before=,after=] | 填写说明：写明研究所用的理论基础、研究方法、研究步骤、技术路线、人员分工、计划使用学校的资源条件等。（(楷体,24半角)页面大小可以根据字数多少调整，填写后请删除该说明(楷体,24半角,B)）(楷体,24半角)
+[indent:left=,firstLine=120] | （二）实施进度安排(华文中宋,24半角)
+ | 序号(华文中宋,24半角)
+ | 项目实施各阶段内容(华文中宋,24半角)
+ | 时间安排(华文中宋,24半角)
+ | 备注(华文中宋,24半角)
+[indent:left=,firstLine=120] [spacing:line=(),before=156,after=] | （三）经费预算及使用计划(华文中宋,24半角)
+[indent:left=,firstLine=480] [spacing:line=400(exact),before=,after=] | 填写说明：估算实施经费。（(楷体,24半角)填写后请删除该说明）(楷体,24半角,B)
+[indent:left=,firstLine=480] [spacing:line=400(exact),before=,after=] | 具体可包括：(楷体,24半角)
+[indent:left=,firstLine=480] [spacing:line=400(exact),before=,after=] | 1、调研、差旅费；(楷体,24半角)
+[indent:left=,firstLine=480] [spacing:line=400(exact),before=,after=] | 2、用于项目研发的元器件、软硬件测试、小型硬件购置费等；(楷体,24半角)
+[indent:left=,firstLine=480] [spacing:line=400(exact),before=,after=] | 3、资料购置、打印、复印、印刷等费用；(楷体,24半角)
+[indent:left=,firstLine=480] [spacing:line=400(exact),before=,after=] | 4、学生撰写与项目有关的论文版面费、申请专利费等。(楷体,24半角)
+ | 五、项目预期成果(B)
+[indent:left=,firstLine=480] [spacing:line=400(exact),before=,after=] | 填写说明：说明项目实施后预期达到的目标和产出的具体成果，如论文级别、实物作品、申请的专利、设计的效果、开发的产品、提供的服务等；创新实践项目需预计公司规模、未来营业额等。(楷体,24半角)填写后请删除该说明。(楷体,24半角,B)
+ | 六、项目成员承诺(B)
+[spacing:line=400(exact),before=,after=] | 团队成员承诺：(华文中宋,24半角)
+[indent:left=,firstLine=480] [spacing:line=400(exact),before=,after=] | 我们认真阅读了202X年大学生创新创业训练项目申报通知，符合相关申报条件，了解项目立项内容，立项报告书及大创项目管理系统中为本团队成员和指导教师具实填写。(楷体,24半角)
+[indent:left=,firstLine=480] [spacing:line=400(exact),before=,after=] | 团队成员承诺对填写的各项内容的真实性负责，项目立项报告内容原创，项目内容保证没有知识产权争议。如获准立项，我们承诺遵守学校的相关规定，按计划认真开展研究和实践工作，取得预期成果。(楷体,24半角)
+[indent:left=,firstLine=480] [spacing:line=400(exact),before=,after=] | 项目负责人（签名）：(华文中宋,24半角)
+[indent:left=,firstLine=480] [spacing:line=400(exact),before=,after=] | 项目成员（签名）：(华文中宋,24半角)
+ | 七、指导教师意见(B)
+[indent:left=,firstLine=480] [spacing:line=400(exact),before=,after=] | （请指导教师对立项报告的整体水平作评价，明确项目开展工作要点和具体要求，明确是否同意项目申请立项）(楷体,24半角)填写后请删除该说明。(楷体,24半角,B)
+[indent:left=,firstLine=480] [spacing:line=400(exact),before=,after=] | 指导教师（签名）：(华文中宋,24半角)
+[spacing:line=(),before=156,after=] |                                                   (24半角)年(24半角)   (24半角)月(24半角)    (24半角)日(24半角)

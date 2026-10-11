@@ -1,0 +1,121 @@
+{
+  "id": "bench.bjt_common_emitter_bias_001",
+  "title": "BJT common-emitter DC operating point",
+  "source": {
+    "kind": "synthetic",
+    "note": "Structured benchmark seed; real textbook image refs will be added after user provides photos."
+  },
+  "problemText": "For an NPN common-emitter bias circuit with collector resistor RC, base resistor RB, and emitter at ground, derive the DC operating point relation.",
+  "imageRefs": [],
+  "circuitGraph": {
+    "id": "graph.bjt_common_emitter_bias_001",
+    "version": "0.1.0",
+    "title": "BJT common-emitter DC bias seed graph",
+    "nodes": [
+      { "id": "n_vcc", "label": "VCC" },
+      { "id": "n_collector", "label": "Collector" },
+      { "id": "n_base", "label": "Base" },
+      { "id": "n_gnd", "label": "Ground", "kind": "reference" }
+    ],
+    "components": [
+      {
+        "id": "vcc",
+        "definitionId": "source.v_dc",
+        "label": "VCC",
+        "ports": ["p", "n"],
+        "parameters": {
+          "voltage": { "value": 12, "unit": "volt", "source": "benchmark" }
+        },
+        "modelVariant": "ideal_dc_voltage_source"
+      },
+      {
+        "id": "rc",
+        "definitionId": "passive.resistor",
+        "label": "RC",
+        "ports": ["p", "n"],
+        "parameters": {
+          "resistance": { "value": 2000, "unit": "ohm", "source": "benchmark" }
+        },
+        "modelVariant": "ideal_resistor"
+      },
+      {
+        "id": "rb",
+        "definitionId": "passive.resistor",
+        "label": "RB",
+        "ports": ["p", "n"],
+        "parameters": {
+          "resistance": { "value": 100000, "unit": "ohm", "source": "benchmark" }
+        },
+        "modelVariant": "ideal_resistor"
+      },
+      {
+        "id": "q1",
+        "definitionId": "bjt.npn",
+        "label": "Q1",
+        "ports": ["collector", "base", "emitter"],
+        "parameters": {
+          "beta": { "value": 100, "unit": "unitless", "source": "benchmark" },
+          "vbe_on": { "value": 0.7, "unit": "volt", "source": "benchmark" }
+        },
+        "modelVariant": "npn_large_signal"
+      },
+      {
+        "id": "gnd",
+        "definitionId": "reference.ground",
+        "label": "GND",
+        "ports": ["ref"],
+        "parameters": {},
+        "modelVariant": "ideal_ground"
+      }
+    ],
+    "ports": [
+      { "id": "supply", "label": "Supply", "nodeId": "n_vcc", "role": "input" },
+      { "id": "collector_probe", "label": "Collector Voltage", "nodeId": "n_collector", "role": "probe" },
+      { "id": "reference", "label": "Reference", "nodeId": "n_gnd", "role": "reference" }
+    ],
+    "connections": [
+      { "id": "c_vcc_p", "nodeId": "n_vcc", "componentId": "vcc", "portId": "p" },
+      { "id": "c_vcc_n", "nodeId": "n_gnd", "componentId": "vcc", "portId": "n" },
+      { "id": "c_rc_p", "nodeId": "n_vcc", "componentId": "rc", "portId": "p" },
+      { "id": "c_rc_n", "nodeId": "n_collector", "componentId": "rc", "portId": "n" },
+      { "id": "c_rb_p", "nodeId": "n_vcc", "componentId": "rb", "portId": "p" },
+      { "id": "c_rb_n", "nodeId": "n_base", "componentId": "rb", "portId": "n" },
+      { "id": "c_q1_collector", "nodeId": "n_collector", "componentId": "q1", "portId": "collector" },
+      { "id": "c_q1_base", "nodeId": "n_base", "componentId": "q1", "portId": "base" },
+      { "id": "c_q1_emitter", "nodeId": "n_gnd", "componentId": "q1", "portId": "emitter" },
+      { "id": "c_gnd_ref", "nodeId": "n_gnd", "componentId": "gnd", "portId": "ref" }
+    ],
+    "metadata": {
+      "topic": "bjt_dc_operating_point"
+    },
+    "validationIssues": []
+  },
+  "groundTruth": {
+    "expectedComponentIds": ["vcc", "rc", "rb", "q1", "gnd"],
+    "expectedNodeIds": ["n_vcc", "n_collector", "n_base", "n_gnd"],
+    "expectedConnectionCount": 10,
+    "equations": [
+      {
+        "id": "eq.base_current",
+        "latex": "I_B = \\frac{V_{CC}-V_{BE}}{R_B}",
+        "variables": ["I_B", "V_CC", "V_BE", "R_B"]
+      },
+      {
+        "id": "eq.collector_current",
+        "latex": "I_C = \\beta I_B",
+        "variables": ["I_C", "beta", "I_B"]
+      }
+    ],
+    "expectedResults": [
+      {
+        "id": "result.collector_voltage",
+        "quantity": "collector voltage",
+        "expression": "VCC - beta * ((VCC - VBE) / RB) * RC",
+        "unit": "volt"
+      }
+    ],
+    "acceptedEquivalentExpressions": ["V_C = V_CC - I_C R_C"],
+    "teachingTags": ["bjt", "common_emitter", "dc_operating_point"]
+  },
+  "difficultyTags": ["analog_basic", "bjt", "dc_bias"]
+}
