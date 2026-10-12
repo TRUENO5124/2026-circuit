@@ -12,7 +12,21 @@ public enum UnitPrefix
     Giga
 }
 
-public record UnitOption(string Symbol, double Multiplier, string DisplayName);
+public class UnitOption
+{
+    public string Symbol { get; set; } = string.Empty;
+    public double Multiplier { get; set; } = 1.0;
+    public string DisplayName { get; set; } = string.Empty;
+
+    public UnitOption() { }
+
+    public UnitOption(string symbol, double multiplier, string displayName)
+    {
+        Symbol = symbol;
+        Multiplier = multiplier;
+        DisplayName = displayName;
+    }
+}
 
 public static class EngineeringUnits
 {

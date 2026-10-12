@@ -168,23 +168,62 @@ public sealed partial class CircuitSymbolPreview : UserControl
                 AddPolygon(stroke, new[] { 60.0, 78.0, 48.0, 68.0, 54.0, 64.0 }, true);
                 break;
 
-            case "mosfet":
-                // NMOS Enhancement Transistor
+            case "mosfet_n_enh":
+                // NMOS Enhancement Transistor (segmented channel, arrow pointing IN)
                 AddPath(stroke, "M0,50 H28", 2.4);
-                AddPath(stroke, "M28,28 V72", 3.4);
-                AddPath(stroke, "M44,28 V41 M44,45 V55 M44,59 V72", 3.0);
-                AddPath(stroke, "M44,28 H62 V0", 2.4);
-                AddPath(stroke, "M44,72 H62 V100", 2.4);
-                AddPath(stroke, "M44,50 H100", 2.4);
-                AddPolygon(stroke, new[] { 86.0, 50.0, 74.0, 44.0, 74.0, 56.0 }, true);
+                AddPath(stroke, "M28,24 V76", 3.4); // Gate plate
+                AddPath(stroke, "M44,24 V38 M44,44 V56 M44,62 V76", 3.2); // Segmented channel
+                AddPath(stroke, "M44,28 H62 V0", 2.4); // Drain
+                AddPath(stroke, "M44,72 H62 V100", 2.4); // Source
+                AddPath(stroke, "M44,50 H75", 2.2);
+                AddPolygon(stroke, new[] { 46.0, 50.0, 58.0, 44.0, 58.0, 56.0 }, true);
                 break;
 
-            case "jfet":
-                // JFET N-channel
-                AddPath(stroke, "M0,50 H38", 2.4);
-                AddPath(stroke, "M38,30 V70", 3.4);
-                AddPath(stroke, "M62,0 V100", 2.4);
-                AddPolygon(stroke, new[] { 58.0, 50.0, 46.0, 44.0, 46.0, 56.0 }, true);
+            case "mosfet_p_enh":
+                // PMOS Enhancement Transistor (segmented channel, arrow pointing OUT)
+                AddPath(stroke, "M0,50 H28", 2.4);
+                AddPath(stroke, "M28,24 V76", 3.4); // Gate plate
+                AddPath(stroke, "M44,24 V38 M44,44 V56 M44,62 V76", 3.2); // Segmented channel
+                AddPath(stroke, "M44,28 H62 V0", 2.4); // Drain
+                AddPath(stroke, "M44,72 H62 V100", 2.4); // Source
+                AddPath(stroke, "M44,50 H75", 2.2);
+                AddPolygon(stroke, new[] { 60.0, 50.0, 48.0, 44.0, 48.0, 56.0 }, true);
+                break;
+
+            case "mosfet_n_dep":
+                // NMOS Depletion Transistor (solid channel, arrow pointing IN)
+                AddPath(stroke, "M0,50 H28", 2.4);
+                AddPath(stroke, "M28,24 V76", 3.4); // Gate plate
+                AddPath(stroke, "M44,24 V76", 3.6); // Solid channel
+                AddPath(stroke, "M44,28 H62 V0", 2.4); // Drain
+                AddPath(stroke, "M44,72 H62 V100", 2.4); // Source
+                AddPath(stroke, "M44,50 H75", 2.2);
+                AddPolygon(stroke, new[] { 46.0, 50.0, 58.0, 44.0, 58.0, 56.0 }, true);
+                break;
+
+            case "mosfet_p_dep":
+                // PMOS Depletion Transistor (solid channel, arrow pointing OUT)
+                AddPath(stroke, "M0,50 H28", 2.4);
+                AddPath(stroke, "M28,24 V76", 3.4); // Gate plate
+                AddPath(stroke, "M44,24 V76", 3.6); // Solid channel
+                AddPath(stroke, "M44,28 H62 V0", 2.4); // Drain
+                AddPath(stroke, "M44,72 H62 V100", 2.4); // Source
+                AddPath(stroke, "M44,50 H75", 2.2);
+                AddPolygon(stroke, new[] { 60.0, 50.0, 48.0, 44.0, 48.0, 56.0 }, true);
+                break;
+
+            case "jfet_n":
+                // JFET N-channel (arrow pointing IN)
+                AddPath(stroke, "M0,50 H60", 2.4); // Gate
+                AddPath(stroke, "M60,0 V100", 3.4); // Channel
+                AddPolygon(stroke, new[] { 60.0, 50.0, 46.0, 44.0, 46.0, 56.0 }, true);
+                break;
+
+            case "jfet_p":
+                // JFET P-channel (arrow pointing OUT)
+                AddPath(stroke, "M0,50 H60", 2.4); // Gate
+                AddPath(stroke, "M60,0 V100", 3.4); // Channel
+                AddPolygon(stroke, new[] { 34.0, 50.0, 48.0, 44.0, 48.0, 56.0 }, true);
                 break;
 
             case "vcvs":
@@ -325,8 +364,14 @@ public sealed partial class CircuitSymbolPreview : UserControl
         if (s.Contains("vccs")) return "vccs";
         if (s.Contains("ccvs")) return "ccvs";
         if (s.Contains("cccs")) return "cccs";
-        if (s.Contains("mosfet") || s.Contains("nmos") || s.Contains("pmos")) return "mosfet";
-        if (s.Contains("jfet")) return "jfet";
+        if (s.Contains("mosfet_n_enh") || s.Contains("n_enh")) return "mosfet_n_enh";
+        if (s.Contains("mosfet_p_enh") || s.Contains("p_enh")) return "mosfet_p_enh";
+        if (s.Contains("mosfet_n_dep") || s.Contains("n_dep")) return "mosfet_n_dep";
+        if (s.Contains("mosfet_p_dep") || s.Contains("p_dep")) return "mosfet_p_dep";
+        if (s.Contains("jfet_n") || s == "jfet") return "jfet_n";
+        if (s.Contains("jfet_p")) return "jfet_p";
+        if (s.Contains("mosfet") || s.Contains("nmos")) return "mosfet_n_enh";
+        if (s.Contains("pmos")) return "mosfet_p_enh";
         if (s.Contains("pnp")) return "bjt_pnp";
         if (s.Contains("npn") || s.Contains("bjt") || s.StartsWith("q")) return "bjt_npn";
         if (s.Contains("v_ac") || s.Contains("vac") || s == "vs") return "vac";

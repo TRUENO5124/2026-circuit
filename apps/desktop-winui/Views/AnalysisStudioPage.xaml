@@ -9,6 +9,15 @@
     xmlns:models="using:CircuitAssistant.Models"
     mc:Ignorable="d">
 
+    <Page.KeyboardAccelerators>
+        <KeyboardAccelerator Key="R" Modifiers="Control" Invoked="OnCtrlRInvoked" />
+        <KeyboardAccelerator Key="Delete" Invoked="OnDeleteInvoked" />
+        <KeyboardAccelerator Key="Back" Invoked="OnDeleteInvoked" />
+        <KeyboardAccelerator Key="R" Invoked="OnRInvoked" />
+        <KeyboardAccelerator Key="Escape" Invoked="OnEscapeInvoked" />
+        <KeyboardAccelerator Key="W" Invoked="OnWInvoked" />
+    </Page.KeyboardAccelerators>
+
     <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
         <Grid.RowDefinitions>
             <!-- Top Command & Ribbon Toolbar -->
@@ -581,9 +590,12 @@
                         x:Name="MainCircuitCanvas"
                         Grid.Row="1"
                         Elements="{x:Bind ViewModel.Elements, Mode=OneWay}"
+                        Wires="{x:Bind ViewModel.Wires, Mode=OneWay}"
                         SelectedElement="{x:Bind ViewModel.SelectedElement, Mode=TwoWay}"
                         ElementSelected="MainCircuitCanvas_ElementSelected"
                         ElementDroppedFromLibrary="MainCircuitCanvas_ElementDroppedFromLibrary"
+                        WireCreated="MainCircuitCanvas_WireCreated"
+                        StatusMessageChanged="MainCircuitCanvas_StatusMessageChanged"
                         BetaText="{x:Bind GetBetaDisplay(ViewModel.BetaNumber), Mode=OneWay}"
                         C1Text="{x:Bind GetUnitDisplay(ViewModel.C1Number, ViewModel.SelectedC1Unit), Mode=OneWay}"
                         C2Text="{x:Bind GetUnitDisplay(ViewModel.C2Number, ViewModel.SelectedC2Unit), Mode=OneWay}"
@@ -805,7 +817,13 @@
                             <!-- ================================================ -->
                             <!-- TAB 1: 元件参数设置 (Parameters)                 -->
                             <!-- ================================================ -->
-                            <PivotItem Header="⚙️ 参数设置">
+                            <PivotItem>
+                                <PivotItem.Header>
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE713;" FontSize="13" />
+                                        <TextBlock Text="参数设置" />
+                                    </StackPanel>
+                                </PivotItem.Header>
                                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,8,0,0">
                                     <StackPanel Spacing="12">
                                         <!-- Selected Component Inspector Card -->
@@ -869,6 +887,27 @@
                                                     <TextBlock Grid.Column="2" VerticalAlignment="Center" Text="{x:Bind ViewModel.SelectedElement.RotationDisplay, Mode=OneWay}" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                                 </Grid>
 
+                                                <!-- Pins Inspection -->
+                                                <StackPanel Spacing="4">
+                                                    <TextBlock Text="引脚端子连接节点:" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                    <ItemsControl ItemsSource="{x:Bind ViewModel.SelectedElement.Pins, Mode=OneWay}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="models:CircuitPin">
+                                                                <Border Margin="0,1" Padding="6,2" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="4">
+                                                                    <Grid>
+                                                                        <Grid.ColumnDefinitions>
+                                                                            <ColumnDefinition Width="Auto" />
+                                                                            <ColumnDefinition Width="*" />
+                                                                        </Grid.ColumnDefinitions>
+                                                                        <TextBlock Grid.Column="0" Text="{x:Bind Name}" FontWeight="SemiBold" FontSize="11" />
+                                                                        <TextBlock Grid.Column="1" HorizontalAlignment="Right" Text="{x:Bind Id}" FontSize="10" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                                                                    </Grid>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+
                                                 <!-- Action Buttons: Rotate & Delete -->
                                                 <Grid ColumnSpacing="8">
                                                     <Grid.ColumnDefinitions>
@@ -909,11 +948,11 @@
                                             Visibility="{x:Bind ViewModel.SelectedElement, Converter={StaticResource NullToVisibilityConverter}, Mode=OneWay}">
                                             <StackPanel Orientation="Horizontal" Spacing="8">
                                                 <FontIcon Glyph="&#xE946;" FontSize="13" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" VerticalAlignment="Center" />
-                                                <TextBlock Text="提示：在画布中点击任意元器件即可高亮选中、拖拽调整布局位置，或修改参数" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                                <TextBlock Text="提示：在画布中点击任意元器件即可高亮选中、拖拽调整布局位置，或按 R 旋转" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
                                             </StackPanel>
                                         </Border>
 
-                                        <!-- Group 1: Power & DC Biasing -->
+                                        <!-- Active Canvas Components & Live Parameter Sync -->
                                         <Border
                                             Padding="14"
                                             Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
@@ -921,174 +960,284 @@
                                             BorderThickness="1"
                                             CornerRadius="8">
                                             <StackPanel Spacing="10">
-                                                <StackPanel Orientation="Horizontal" Spacing="6">
-                                                    <FontIcon Glyph="&#xE781;" FontSize="13" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                                                    <TextBlock Text="直流电源与偏置电阻网络" FontWeight="SemiBold" FontSize="12" />
-                                                </StackPanel>
-
-                                                <!-- Vcc -->
-                                                <Grid ColumnSpacing="8">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="70" />
-                                                        <ColumnDefinition Width="*" />
-                                                        <ColumnDefinition Width="90" />
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock VerticalAlignment="Center" Text="电源 Vcc:" FontSize="12" />
-                                                    <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.VccNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
-                                                    <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.VoltageUnits}" SelectedItem="{x:Bind ViewModel.SelectedVccUnit, Mode=TwoWay}" />
+                                                <Grid>
+                                                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                        <FontIcon Glyph="&#xE8F1;" FontSize="13" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                                        <TextBlock Text="画布元器件清单与参数同步" FontWeight="SemiBold" FontSize="12" />
+                                                    </StackPanel>
+                                                    <Border HorizontalAlignment="Right" Background="{ThemeResource LayerFillColorAltBrush}" CornerRadius="10" Padding="6,1">
+                                                        <TextBlock Text="{x:Bind ViewModel.Elements.Count, Mode=OneWay}" FontSize="10" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                    </Border>
                                                 </Grid>
 
-                                                <!-- Rb1 -->
-                                                <Grid ColumnSpacing="8">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="70" />
-                                                        <ColumnDefinition Width="*" />
-                                                        <ColumnDefinition Width="90" />
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock VerticalAlignment="Center" Text="基极 Rb1:" FontSize="12" />
-                                                    <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.Rb1Number, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
-                                                    <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.ResistanceUnits}" SelectedItem="{x:Bind ViewModel.SelectedRb1Unit, Mode=TwoWay}" />
-                                                </Grid>
+                                                <ItemsControl ItemsSource="{x:Bind ViewModel.Elements, Mode=OneWay}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="models:CircuitElement">
+                                                            <Border
+                                                                Margin="0,0,0,6"
+                                                                Padding="8,6"
+                                                                Background="{ThemeResource LayerFillColorAltBrush}"
+                                                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                                                BorderThickness="1"
+                                                                CornerRadius="6">
+                                                                <Grid RowSpacing="6">
+                                                                    <Grid.RowDefinitions>
+                                                                        <RowDefinition Height="Auto" />
+                                                                        <RowDefinition Height="Auto" />
+                                                                    </Grid.RowDefinitions>
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="*" />
+                                                                        <ColumnDefinition Width="Auto" />
+                                                                    </Grid.ColumnDefinitions>
 
-                                                <!-- Rb2 -->
-                                                <Grid ColumnSpacing="8">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="70" />
-                                                        <ColumnDefinition Width="*" />
-                                                        <ColumnDefinition Width="90" />
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock VerticalAlignment="Center" Text="基极 Rb2:" FontSize="12" />
-                                                    <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.Rb2Number, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
-                                                    <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.ResistanceUnits}" SelectedItem="{x:Bind ViewModel.SelectedRb2Unit, Mode=TwoWay}" />
-                                                </Grid>
+                                                                    <!-- Name & Direction -->
+                                                                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                                        <Border Width="22" Height="22" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="4">
+                                                                            <controls:CircuitSymbolPreview SymbolId="{x:Bind DefinitionId}" Width="16" Height="16" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                                        </Border>
+                                                                        <TextBlock Text="{x:Bind Name}" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center" />
+                                                                        <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="3" Padding="4,0">
+                                                                            <TextBlock Text="{x:Bind RotationDisplay, Mode=OneWay}" FontSize="9" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                                        </Border>
+                                                                    </StackPanel>
 
-                                                <!-- Rc -->
-                                                <Grid ColumnSpacing="8">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="70" />
-                                                        <ColumnDefinition Width="*" />
-                                                        <ColumnDefinition Width="90" />
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock VerticalAlignment="Center" Text="集电极 Rc:" FontSize="12" />
-                                                    <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.RcNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
-                                                    <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.ResistanceUnits}" SelectedItem="{x:Bind ViewModel.SelectedRcUnit, Mode=TwoWay}" />
-                                                </Grid>
+                                                                    <!-- Action buttons -->
+                                                                    <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="2">
+                                                                        <Button
+                                                                            Padding="4,2"
+                                                                            Style="{StaticResource SubtleButtonStyle}"
+                                                                            ToolTipService.ToolTip="选中此元件"
+                                                                            Click="ElementCard_SelectClick"
+                                                                            Tag="{x:Bind}">
+                                                                            <FontIcon Glyph="&#xE81D;" FontSize="10" />
+                                                                        </Button>
+                                                                        <Button
+                                                                            Padding="4,2"
+                                                                            Style="{StaticResource SubtleButtonStyle}"
+                                                                            ToolTipService.ToolTip="旋转 90° (R)"
+                                                                            Click="ElementCard_RotateClick"
+                                                                            Tag="{x:Bind}">
+                                                                            <FontIcon Glyph="&#xE7AD;" FontSize="10" />
+                                                                        </Button>
+                                                                        <Button
+                                                                            Padding="4,2"
+                                                                            Style="{StaticResource SubtleButtonStyle}"
+                                                                            ToolTipService.ToolTip="删除此元件"
+                                                                            Click="ElementCard_DeleteClick"
+                                                                            Tag="{x:Bind}">
+                                                                            <FontIcon Glyph="&#xE74D;" FontSize="10" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+                                                                        </Button>
+                                                                    </StackPanel>
 
-                                                <!-- Re -->
-                                                <Grid ColumnSpacing="8">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="70" />
-                                                        <ColumnDefinition Width="*" />
-                                                        <ColumnDefinition Width="90" />
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock VerticalAlignment="Center" Text="发射极 Re:" FontSize="12" />
-                                                    <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.ReNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
-                                                    <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.ResistanceUnits}" SelectedItem="{x:Bind ViewModel.SelectedReUnit, Mode=TwoWay}" />
-                                                </Grid>
+                                                                    <!-- Value & Unit Inline Editing -->
+                                                                    <Grid Grid.Row="1" Grid.ColumnSpan="2" ColumnSpacing="6">
+                                                                        <Grid.ColumnDefinitions>
+                                                                            <ColumnDefinition Width="*" />
+                                                                            <ColumnDefinition Width="65" />
+                                                                        </Grid.ColumnDefinitions>
+                                                                        <NumberBox Grid.Column="0" Value="{x:Bind DisplayNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
+                                                                        <TextBox Grid.Column="1" Text="{x:Bind UnitSymbol, Mode=TwoWay}" PlaceholderText="单位" />
+                                                                    </Grid>
+                                                                </Grid>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
                                             </StackPanel>
                                         </Border>
 
-                                        <!-- Group 2: AC Load & Capacitors -->
-                                        <Border
-                                            Padding="14"
-                                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                            BorderThickness="1"
-                                            CornerRadius="8">
-                                            <StackPanel Spacing="10">
-                                                <StackPanel Orientation="Horizontal" Spacing="6">
-                                                    <FontIcon Glyph="&#xE756;" FontSize="13" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                                                    <TextBlock Text="电容与交流负载参数" FontWeight="SemiBold" FontSize="12" />
-                                                </StackPanel>
-
-                                                <!-- RL -->
-                                                <Grid ColumnSpacing="8">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="70" />
-                                                        <ColumnDefinition Width="*" />
-                                                        <ColumnDefinition Width="90" />
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock VerticalAlignment="Center" Text="负载 RL:" FontSize="12" />
-                                                    <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.RlNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
-                                                    <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.ResistanceUnits}" SelectedItem="{x:Bind ViewModel.SelectedRlUnit, Mode=TwoWay}" />
-                                                </Grid>
-
-                                                <!-- C1 -->
-                                                <Grid ColumnSpacing="8">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="70" />
-                                                        <ColumnDefinition Width="*" />
-                                                        <ColumnDefinition Width="90" />
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock VerticalAlignment="Center" Text="输入 C1:" FontSize="12" />
-                                                    <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.C1Number, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
-                                                    <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.CapacitanceUnits}" SelectedItem="{x:Bind ViewModel.SelectedC1Unit, Mode=TwoWay}" />
-                                                </Grid>
-
-                                                <!-- C2 -->
-                                                <Grid ColumnSpacing="8">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="70" />
-                                                        <ColumnDefinition Width="*" />
-                                                        <ColumnDefinition Width="90" />
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock VerticalAlignment="Center" Text="输出 C2:" FontSize="12" />
-                                                    <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.C2Number, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
-                                                    <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.CapacitanceUnits}" SelectedItem="{x:Bind ViewModel.SelectedC2Unit, Mode=TwoWay}" />
-                                                </Grid>
-
-                                                <!-- Ce -->
-                                                <Grid ColumnSpacing="8">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="70" />
-                                                        <ColumnDefinition Width="*" />
-                                                        <ColumnDefinition Width="90" />
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock VerticalAlignment="Center" Text="旁路 Ce:" FontSize="12" />
-                                                    <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.CeNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
-                                                    <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.CapacitanceUnits}" SelectedItem="{x:Bind ViewModel.SelectedCeUnit, Mode=TwoWay}" />
-                                                </Grid>
-                                            </StackPanel>
-                                        </Border>
-
-                                        <!-- Group 3: BJT Transistor & Source Frequency -->
-                                        <Border
-                                            Padding="14"
-                                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                            BorderThickness="1"
-                                            CornerRadius="8">
-                                            <StackPanel Spacing="10">
-                                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <!-- Teaching Macro Parameters (Visible only in Teaching Template) -->
+                                        <Expander
+                                            Margin="0,2,0,0"
+                                            HorizontalAlignment="Stretch"
+                                            HorizontalContentAlignment="Stretch"
+                                            IsExpanded="{x:Bind ViewModel.IsTeachingTemplate, Mode=OneWay}"
+                                            Visibility="{x:Bind ViewModel.IsTeachingTemplate, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}">
+                                            <Expander.Header>
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
                                                     <FontIcon Glyph="&#xE943;" FontSize="13" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                                                    <TextBlock Text="三极管模型与信号源特性" FontWeight="SemiBold" FontSize="12" />
+                                                    <TextBlock Text="分压偏置电路标准参数宏" FontWeight="SemiBold" FontSize="12" />
                                                 </StackPanel>
+                                            </Expander.Header>
+                                            <StackPanel Spacing="10" Padding="0,6,0,6">
+                                                <!-- Group 1: Power & DC Biasing -->
+                                                <Border
+                                                    Padding="12"
+                                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="6">
+                                                    <StackPanel Spacing="8">
+                                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                                            <FontIcon Glyph="&#xE781;" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                                            <TextBlock Text="直流电源与偏置电阻网络" FontWeight="SemiBold" FontSize="11" />
+                                                        </StackPanel>
 
-                                                <!-- Beta -->
-                                                <Grid ColumnSpacing="8">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="70" />
-                                                        <ColumnDefinition Width="*" />
-                                                        <ColumnDefinition Width="90" />
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock VerticalAlignment="Center" Text="晶体管 β:" FontSize="12" />
-                                                    <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.BetaNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
-                                                    <TextBlock Grid.Column="2" VerticalAlignment="Center" Text="hFE (无量纲)" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                                </Grid>
+                                                        <!-- Vcc -->
+                                                        <Grid ColumnSpacing="8">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="70" />
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="80" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock VerticalAlignment="Center" Text="电源 Vcc:" FontSize="11" />
+                                                            <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.VccNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
+                                                            <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.VoltageUnits}" SelectedItem="{x:Bind ViewModel.SelectedVccUnit, Mode=TwoWay}" />
+                                                        </Grid>
 
-                                                <!-- Frequency -->
-                                                <Grid ColumnSpacing="8">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="70" />
-                                                        <ColumnDefinition Width="*" />
-                                                        <ColumnDefinition Width="90" />
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock VerticalAlignment="Center" Text="信号频率 f:" FontSize="12" />
-                                                    <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.FreqNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
-                                                    <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.FrequencyUnits}" SelectedItem="{x:Bind ViewModel.SelectedFreqUnit, Mode=TwoWay}" />
-                                                </Grid>
+                                                        <!-- Rb1 -->
+                                                        <Grid ColumnSpacing="8">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="70" />
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="80" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock VerticalAlignment="Center" Text="基极 Rb1:" FontSize="11" />
+                                                            <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.Rb1Number, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
+                                                            <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.ResistanceUnits}" SelectedItem="{x:Bind ViewModel.SelectedRb1Unit, Mode=TwoWay}" />
+                                                        </Grid>
+
+                                                        <!-- Rb2 -->
+                                                        <Grid ColumnSpacing="8">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="70" />
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="80" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock VerticalAlignment="Center" Text="基极 Rb2:" FontSize="11" />
+                                                            <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.Rb2Number, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
+                                                            <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.ResistanceUnits}" SelectedItem="{x:Bind ViewModel.SelectedRb2Unit, Mode=TwoWay}" />
+                                                        </Grid>
+
+                                                        <!-- Rc -->
+                                                        <Grid ColumnSpacing="8">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="70" />
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="80" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock VerticalAlignment="Center" Text="集电极 Rc:" FontSize="11" />
+                                                            <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.RcNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
+                                                            <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.ResistanceUnits}" SelectedItem="{x:Bind ViewModel.SelectedRcUnit, Mode=TwoWay}" />
+                                                        </Grid>
+
+                                                        <!-- Re -->
+                                                        <Grid ColumnSpacing="8">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="70" />
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="80" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock VerticalAlignment="Center" Text="发射极 Re:" FontSize="11" />
+                                                            <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.ReNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
+                                                            <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.ResistanceUnits}" SelectedItem="{x:Bind ViewModel.SelectedReUnit, Mode=TwoWay}" />
+                                                        </Grid>
+                                                    </StackPanel>
+                                                </Border>
+
+                                                <!-- Group 2: AC Load & Capacitors -->
+                                                <Border
+                                                    Padding="12"
+                                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="6">
+                                                    <StackPanel Spacing="8">
+                                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                                            <FontIcon Glyph="&#xE756;" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                                            <TextBlock Text="电容与交流负载参数" FontWeight="SemiBold" FontSize="11" />
+                                                        </StackPanel>
+
+                                                        <!-- RL -->
+                                                        <Grid ColumnSpacing="8">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="70" />
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="80" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock VerticalAlignment="Center" Text="负载 RL:" FontSize="11" />
+                                                            <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.RlNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
+                                                            <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.ResistanceUnits}" SelectedItem="{x:Bind ViewModel.SelectedRlUnit, Mode=TwoWay}" />
+                                                        </Grid>
+
+                                                        <!-- C1 -->
+                                                        <Grid ColumnSpacing="8">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="70" />
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="80" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock VerticalAlignment="Center" Text="输入 C1:" FontSize="11" />
+                                                            <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.C1Number, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
+                                                            <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.CapacitanceUnits}" SelectedItem="{x:Bind ViewModel.SelectedC1Unit, Mode=TwoWay}" />
+                                                        </Grid>
+
+                                                        <!-- C2 -->
+                                                        <Grid ColumnSpacing="8">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="70" />
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="80" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock VerticalAlignment="Center" Text="输出 C2:" FontSize="11" />
+                                                            <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.C2Number, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
+                                                            <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.CapacitanceUnits}" SelectedItem="{x:Bind ViewModel.SelectedC2Unit, Mode=TwoWay}" />
+                                                        </Grid>
+
+                                                        <!-- Ce -->
+                                                        <Grid ColumnSpacing="8">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="70" />
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="80" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock VerticalAlignment="Center" Text="旁路 Ce:" FontSize="11" />
+                                                            <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.CeNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
+                                                            <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.CapacitanceUnits}" SelectedItem="{x:Bind ViewModel.SelectedCeUnit, Mode=TwoWay}" />
+                                                        </Grid>
+                                                    </StackPanel>
+                                                </Border>
+
+                                                <!-- Group 3: BJT Transistor & Source Frequency -->
+                                                <Border
+                                                    Padding="12"
+                                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="6">
+                                                    <StackPanel Spacing="8">
+                                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                                            <FontIcon Glyph="&#xE943;" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                                            <TextBlock Text="三极管模型与信号源特性" FontWeight="SemiBold" FontSize="11" />
+                                                        </StackPanel>
+
+                                                        <!-- Beta -->
+                                                        <Grid ColumnSpacing="8">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="70" />
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="80" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock VerticalAlignment="Center" Text="晶体管 β:" FontSize="11" />
+                                                            <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.BetaNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
+                                                            <TextBlock Grid.Column="2" VerticalAlignment="Center" Text="hFE" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                        </Grid>
+
+                                                        <!-- Frequency -->
+                                                        <Grid ColumnSpacing="8">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="70" />
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="80" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock VerticalAlignment="Center" Text="信号频率 f:" FontSize="11" />
+                                                            <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.FreqNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
+                                                            <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.FrequencyUnits}" SelectedItem="{x:Bind ViewModel.SelectedFreqUnit, Mode=TwoWay}" />
+                                                        </Grid>
+                                                    </StackPanel>
+                                                </Border>
                                             </StackPanel>
-                                        </Border>
+                                        </Expander>
                                     </StackPanel>
                                 </ScrollViewer>
                             </PivotItem>
@@ -1096,7 +1245,13 @@
                             <!-- ================================================ -->
                             <!-- TAB 2: 实时分析指标 (Metrics Dashboard)          -->
                             <!-- ================================================ -->
-                            <PivotItem Header="📊 实时指标">
+                            <PivotItem>
+                                <PivotItem.Header>
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE9D2;" FontSize="13" />
+                                        <TextBlock Text="实时指标" />
+                                    </StackPanel>
+                                </PivotItem.Header>
                                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,8,0,0">
                                     <StackPanel Spacing="12">
                                         <!-- Q-Point Card -->
@@ -1196,7 +1351,13 @@
                             <!-- ================================================ -->
                             <!-- TAB 3: 模电分步解题推导 (Pedagogical Derivations) -->
                             <!-- ================================================ -->
-                            <PivotItem Header="📘 解题推导">
+                            <PivotItem>
+                                <PivotItem.Header>
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE82D;" FontSize="13" />
+                                        <TextBlock Text="解题推导" />
+                                    </StackPanel>
+                                </PivotItem.Header>
                                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,8,0,0">
                                     <StackPanel Spacing="12">
                                         <TextBlock

@@ -12,16 +12,32 @@
         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
         BorderThickness="1"
         CornerRadius="6"
-        Padding="12,10">
-        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-            <TextBlock
-                x:Name="FormulaText"
-                FontFamily="Cambria Math, Segoe UI Variable Text, Consolas"
-                FontSize="14"
-                LineHeight="24"
-                Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                IsTextSelectionEnabled="True"
-                TextWrapping="NoWrap" />
-        </ScrollViewer>
+        Padding="10,8">
+        <Grid ColumnDefinitions="*,Auto">
+            <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                <TextBlock
+                    x:Name="FormulaText"
+                    FontFamily="Cambria Math, Latin Modern Math, STIX Two Math, Segoe UI Variable Text, Consolas"
+                    FontSize="13.5"
+                    LineHeight="24"
+                    Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                    IsTextSelectionEnabled="True"
+                    TextWrapping="NoWrap" />
+            </ScrollViewer>
+
+            <Button
+                Grid.Column="1"
+                VerticalAlignment="Top"
+                Margin="8,0,0,0"
+                Padding="6,3"
+                Click="CopyLatex_Click"
+                ToolTipService.ToolTip="复制原始 LaTeX 表达式"
+                Style="{StaticResource SubtleButtonStyle}">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <FontIcon x:Name="CopyIcon" Glyph="&#xE8C8;" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock x:Name="CopyText" Text="LaTeX" FontSize="10" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+            </Button>
+        </Grid>
     </Border>
 </UserControl>
