@@ -1,0 +1,288 @@
+{
+  "Version": "1.2.0",
+  "ProjectName": "二极管钳位电路",
+  "ProjectFileName": "D07-clamper.circuit",
+  "Description": "知识点：二极管钳位（直流恢复）电路。电容 C1 与二极管 D1 串联/并联构成钳位电路：输入负半周使 D1 导通，C1 被充电到约 Vm − VF；此后输入正半周与电容电压叠加，输出波形整体上移，输出最小值被钳位在约 −0.7 V、最大值约为 2Vm − VF，峰峰值基本保持不变。教材参考：童诗白《模拟电子技术基础》二极管钳位电路。",
+  "CreatedAt": "2026-10-18T13:43:57.8027376+08:00",
+  "ModifiedAt": "2026-10-18T13:43:57.8027377+08:00",
+  "Parameters": {},
+  "ParameterUnits": {},
+  "IsTeachingTemplate": true,
+  "Elements": [
+    {
+      "Id": "V1",
+      "Name": "交流信号源 V1 (峰值 5 V / 50 Hz)",
+      "DefinitionId": "source.v_ac_small_signal",
+      "Category": "激励电源",
+      "Description": "50 Hz 正弦交流电压源，峰值 5 V。",
+      "Value": 0,
+      "FrequencyHz": 50,
+      "Material": "Silicon",
+      "MosfetK": 0.001,
+      "MosfetLambda": 0,
+      "Type": "AcVoltageSource",
+      "DisplayNumber": 5,
+      "UnitSymbol": "V",
+      "X": 100,
+      "Y": 320,
+      "Width": 60,
+      "Height": 60,
+      "RotationDeg": 0,
+      "Orientation": "Horizontal",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "pos",
+          "Name": "pos",
+          "RelativeX": 0,
+          "RelativeY": -35,
+          "ConnectedNetId": -1
+        },
+        {
+          "Id": "neg",
+          "Name": "neg",
+          "RelativeX": 0,
+          "RelativeY": 35,
+          "ConnectedNetId": -1
+        }
+      ]
+    },
+    {
+      "Id": "C1",
+      "Name": "钳位电容 C1 (10 μF)",
+      "DefinitionId": "passive.capacitor",
+      "Category": "无源器件",
+      "Description": "钳位电容器：与输入串联，在二极管导通半周被充电，形成直流偏移电压。",
+      "Value": 0,
+      "FrequencyHz": 1000,
+      "Material": "Silicon",
+      "MosfetK": 0.001,
+      "MosfetLambda": 0,
+      "Type": "Capacitor",
+      "DisplayNumber": 10,
+      "UnitSymbol": "μF",
+      "X": 240,
+      "Y": 285,
+      "Width": 80,
+      "Height": 50,
+      "RotationDeg": 0,
+      "Orientation": "Horizontal",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "1",
+          "Name": "1",
+          "RelativeX": -35,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        },
+        {
+          "Id": "2",
+          "Name": "2",
+          "RelativeX": 35,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        }
+      ]
+    },
+    {
+      "Id": "D1",
+      "Name": "钳位二极管 D1 (硅管 VF≈0.7 V)",
+      "DefinitionId": "diode.standard",
+      "Category": "半导体管",
+      "Description": "钳位二极管：阴极接输出节点、阳极接地，输出下限被钳位在约 −0.7 V。",
+      "Value": 0,
+      "FrequencyHz": 1000,
+      "Material": "Silicon",
+      "MosfetK": 0.001,
+      "MosfetLambda": 0,
+      "Type": "Diode",
+      "DisplayNumber": 0.7,
+      "UnitSymbol": "V",
+      "X": 400,
+      "Y": 320,
+      "Width": 80,
+      "Height": 50,
+      "RotationDeg": 270,
+      "Orientation": "Vertical",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "A",
+          "Name": "A",
+          "RelativeX": -35,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        },
+        {
+          "Id": "K",
+          "Name": "K",
+          "RelativeX": 35,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        }
+      ]
+    },
+    {
+      "Id": "RL",
+      "Name": "输出负载电阻 RL (10 kΩ)",
+      "DefinitionId": "passive.resistor",
+      "Category": "无源器件",
+      "Description": "输出负载电阻，时间常数 RL·C1 远大于输入周期，保持钳位电平。",
+      "Value": 0,
+      "FrequencyHz": 1000,
+      "Material": "Silicon",
+      "MosfetK": 0.001,
+      "MosfetLambda": 0,
+      "Type": "Resistor",
+      "DisplayNumber": 10,
+      "UnitSymbol": "kΩ",
+      "X": 500,
+      "Y": 325,
+      "Width": 80,
+      "Height": 50,
+      "RotationDeg": 90,
+      "Orientation": "Vertical",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "1",
+          "Name": "1",
+          "RelativeX": -40,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        },
+        {
+          "Id": "2",
+          "Name": "2",
+          "RelativeX": 40,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        }
+      ]
+    },
+    {
+      "Id": "GND",
+      "Name": "参考地 GND",
+      "DefinitionId": "reference.ground",
+      "Category": "参考地",
+      "Description": "基准零电位参考节点，统一电路地电位基准。",
+      "Value": 0,
+      "FrequencyHz": 1000,
+      "Material": "Silicon",
+      "MosfetK": 0.001,
+      "MosfetLambda": 0,
+      "Type": "Ground",
+      "DisplayNumber": 0,
+      "UnitSymbol": "V",
+      "X": 260,
+      "Y": 502,
+      "Width": 40,
+      "Height": 35,
+      "RotationDeg": 0,
+      "Orientation": "Horizontal",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "GND",
+          "Name": "GND",
+          "RelativeX": 0,
+          "RelativeY": -22,
+          "ConnectedNetId": -1
+        }
+      ]
+    }
+  ],
+  "Wires": [
+    {
+      "Id": "W_VIN_V1_pos_C1",
+      "StartElementId": "V1",
+      "StartPinName": "pos",
+      "EndElementId": "C1",
+      "EndPinName": "1",
+      "StartX": 100,
+      "StartY": 285,
+      "EndX": 205,
+      "EndY": 285,
+      "NetId": 1,
+      "FlipCorner": false,
+      "CustomMid": 0,
+      "Waypoints": null
+    },
+    {
+      "Id": "W_VOUT_RAIL",
+      "StartElementId": "",
+      "StartPinName": "",
+      "EndElementId": "",
+      "EndPinName": "",
+      "StartX": 255,
+      "StartY": 285,
+      "EndX": 520,
+      "EndY": 285,
+      "NetId": 2,
+      "FlipCorner": false,
+      "CustomMid": 0,
+      "Waypoints": null
+    },
+    {
+      "Id": "W_GND_RAIL",
+      "StartElementId": "",
+      "StartPinName": "",
+      "EndElementId": "",
+      "EndPinName": "",
+      "StartX": 80,
+      "StartY": 480,
+      "EndX": 520,
+      "EndY": 480,
+      "NetId": 0,
+      "FlipCorner": false,
+      "CustomMid": 0,
+      "Waypoints": null
+    },
+    {
+      "Id": "W_GND_V1_neg",
+      "StartElementId": "V1",
+      "StartPinName": "neg",
+      "EndElementId": "W_GND_RAIL",
+      "EndPinName": "WireTap",
+      "StartX": 100,
+      "StartY": 355,
+      "EndX": 100,
+      "EndY": 480,
+      "NetId": 0,
+      "FlipCorner": false,
+      "CustomMid": 0,
+      "Waypoints": null
+    },
+    {
+      "Id": "W_GND_D1_A",
+      "StartElementId": "D1",
+      "StartPinName": "A",
+      "EndElementId": "W_GND_RAIL",
+      "EndPinName": "WireTap",
+      "StartX": 400,
+      "StartY": 355,
+      "EndX": 400,
+      "EndY": 480,
+      "NetId": 0,
+      "FlipCorner": false,
+      "CustomMid": 0,
+      "Waypoints": null
+    },
+    {
+      "Id": "W_GND_RL_2",
+      "StartElementId": "RL",
+      "StartPinName": "2",
+      "EndElementId": "W_GND_RAIL",
+      "EndPinName": "WireTap",
+      "StartX": 500,
+      "StartY": 365,
+      "EndX": 500,
+      "EndY": 480,
+      "NetId": 0,
+      "FlipCorner": false,
+      "CustomMid": 0,
+      "Waypoints": null
+    }
+  ]
+}

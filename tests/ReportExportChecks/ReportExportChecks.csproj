@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0-windows10.0.26100.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <NoWarn>MVVMTK0045</NoWarn>
+    <RootNamespace>ReportExportChecks</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- CircuitElement derives from CommunityToolkit.Mvvm ObservableObject. -->
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Only the source files that ReportExportService actually depends on are linked.
+      The solver strategies and TopologyClassifier are intentionally NOT linked:
+      this harness builds its netlist with NetlistExtractor (no solving), which keeps
+      the harness independent from the Engine/Linear files that are being developed
+      in parallel. No package other than the already-used CommunityToolkit.Mvvm 8.4.0
+      is added and no existing application source file is modified.
+    -->
+    <Compile Include="..\..\apps\desktop-winui\Models\CircuitElement.cs" Link="Linked\Models\CircuitElement.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Models\EngineeringUnit.cs" Link="Linked\Models\EngineeringUnit.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Models\AnalysisStep.cs" Link="Linked\Models\AnalysisStep.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Models\AnalysisResult.cs" Link="Linked\Models\AnalysisResult.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Models\LinearAnalysisModels.cs" Link="Linked\Models\LinearAnalysisModels.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Engine\ElectricalNetlist.cs" Link="Linked\Engine\ElectricalNetlist.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Engine\NetlistExtractor.cs" Link="Linked\Engine\NetlistExtractor.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Engine\PedagogicalSolution.cs" Link="Linked\Engine\PedagogicalSolution.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Services\ReportExportService.cs" Link="Linked\Services\ReportExportService.cs" />
+    <!-- 非线性引擎（2026-10-18 契约 §2）：TopologyClassifier 已路由到二极管/MOS/多级教学策略。
+         本工程不构建 TopologyClassifier，但按契约显式链接两个器件模型、多级预留接口与三个
+         教学策略，保证这些新引擎文件在任何链接路径下都可编译；教学策略实现后会引用
+         ScientificNotationFormatter，故一并链接（本工程不调用这些策略）。 -->
+    <Compile Include="..\..\apps\desktop-winui\Services\ScientificNotationFormatter.cs" Link="Linked\Services\ScientificNotationFormatter.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Services\TeachingDisplay.cs" Link="Linked\Services\TeachingDisplay.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Engine\Nonlinear\DiodeModel.cs" Link="Linked\Engine\Nonlinear\DiodeModel.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Engine\Nonlinear\MosfetModel.cs" Link="Linked\Engine\Nonlinear\MosfetModel.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Engine\MultiStage\MultiStageContracts.cs" Link="Linked\Engine\MultiStage\MultiStageContracts.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Engine\Strategies\DiodeCircuitStrategy.cs" Link="Linked\Engine\Strategies\DiodeCircuitStrategy.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Engine\Strategies\MosfetAmplifierStrategy.cs" Link="Linked\Engine\Strategies\MosfetAmplifierStrategy.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Engine\Strategies\MultiStageAmplifierStrategy.cs" Link="Linked\Engine\Strategies\MultiStageAmplifierStrategy.cs" />
+  </ItemGroup>
+</Project>

@@ -8,6 +8,7 @@
 
 using System;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using CircuitAssistant.Models;
 using CircuitAssistant.Services;
@@ -28,8 +29,9 @@ public class FirstOrderRcStrategy : ICircuitStrategy
         _subtype = subtype;
     }
 
-    public Task<PedagogicalSolution> SolveAsync(ElectricalNetlist netlist, AnalysisParameters parameters)
+    public Task<PedagogicalSolution> SolveAsync(ElectricalNetlist netlist, AnalysisParameters parameters, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var solution = new PedagogicalSolution
         {
             IsSuccess = true,
@@ -40,48 +42,56 @@ public class FirstOrderRcStrategy : ICircuitStrategy
 
         // 1. Extract Components
         var resList = netlist.Elements.Values.Where(e => e.Type == ElementType.Resistor).ToList();
-        var cap = netlist.Elements.Values.FirstOrDefault(e => e.Type == ElementType.Capacitor);
+        var cap = netlist.Elements.Values.FirstOrDefault(e => e.Type is ElementType.Capacitor or ElementType.CapacitorPolarized);
         var ind = netlist.Elements.Values.FirstOrDefault(e => e.Type == ElementType.Inductor);
-        var dcSrc = netlist.Elements.Values.FirstOrDefault(e => e.Type == ElementType.DcVoltageSource);
-        var acSrc = netlist.Elements.Values.FirstOrDefault(e => e.Type == ElementType.AcVoltageSource);
 
-        // Values in SI units
-        double rVal = resList.Count > 0 ? GetSiValue(resList[0]) : 1000.0;
-        string rName = resList.Count > 0 ? resList[0].Name : "R1";
-        string rId = resList.Count > 0 ? resList[0].Id : "R1";
-
-        double cVal = cap != null ? GetSiValue(cap) : 100e-6;
-        string cId = cap != null ? cap.Id : "C1";
-
-        double lVal = ind != null ? GetSiValue(ind) : 10e-3;
-        string lId = ind != null ? ind.Id : "L1";
-
-        double vsVal = dcSrc != null ? GetSiValue(dcSrc) : (acSrc != null ? GetSiValue(acSrc) : 10.0);
-        string vsId = dcSrc != null ? dcSrc.Id : (acSrc != null ? acSrc.Id : "VS");
-
-        // 2. Thevenin Equivalent Resistance Req and Time Constant tau
-        // If there are multiple resistors, calculate equivalent resistance
-        double req = rVal;
-        if (resList.Count > 1)
-        {
-            req = resList.Sum(r => GetSiValue(r));
-        }
-        if (req < 1e-9) req = 1.0;
-
-        double tau = _isRl ? (lVal / req) : (req * cVal);
-        if (tau < 1e-15) tau = 1e-6;
+        // This teaching strategy assumes a single closed series loop. A branch
+        // network must not silently become the sum of every resistor on canvas.
+        var allowed = new[] { ElementType.Resistor, ElementType.Capacitor, ElementType.CapacitorPolarized,
+            ElementType.Inductor, ElementType.DcVoltageSource, ElementType.AcVoltageSource, ElementType.Ground };
+        var reactive = _isRl ? ind : cap;
+        var sources = netlist.Elements.Values.Where(e => e.Type is ElementType.DcVoltageSource or ElementType.AcVoltageSource).ToList();
+        if (reactive == null || resList.Count == 0 || sources.Count != 1 ||
+            netlist.Elements.Values.Any(e => !allowed.Contains(e.Type)) ||
+            netlist.Elements.Values.Count(e => e.Type is ElementType.Capacitor or ElementType.CapacitorPolarized or ElementType.Inductor) != 1 ||
+            netlist.Nodes.Any(n => n.ConnectedBranches.Count != 2))
+            return Task.FromResult(PedagogicalSolution.Failure(TopologyType,
+                "当前一阶教学策略支持一个电压源、一个储能元件和串联电阻组成的闭合回路；并联、加载或多源网络尚不支持。"));
+        var reactiveBranch = netlist.Branches.FirstOrDefault(b => b.Element.Id == reactive.Id);
+        if (reactiveBranch == null)
+            return Task.FromResult(PedagogicalSolution.Failure(TopologyType, "储能元件引脚未形成有效支路。"));
+        double req = resList.Sum(GetSiValue);
+        double cVal = cap != null ? GetSiValue(cap) : 0;
+        double lVal = ind != null ? GetSiValue(ind) : 0;
+        double vsVal = GetSiValue(sources[0]);
+        string vsId = sources[0].Id;
+        string rId = string.Join(" + R_", resList.Select(r => "{" + r.Id + "}"));
+        string cId = cap?.Id ?? "";
+        string lId = ind?.Id ?? "";
+        if (!double.IsFinite(req) || req <= 0 || !double.IsFinite(vsVal) ||
+            (!_isRl && (!double.IsFinite(cVal) || cVal <= 0)) || (_isRl && (!double.IsFinite(lVal) || lVal <= 0)))
+            return Task.FromResult(PedagogicalSolution.Failure(TopologyType, "电阻与储能参数必须是有限正数。"));
+        double tau = _isRl ? lVal / req : req * cVal;
+        if (!double.IsFinite(tau) || tau <= 0)
+            return Task.FromResult(PedagogicalSolution.Failure(TopologyType, "时间常数超出可计算范围。"));
+        bool highPass = !_isRl && _subtype == "HighPassFilter";
 
         double omegaC = 1.0 / tau;
         double fc = omegaC / (2.0 * Math.PI);
 
-        // Format values with scientific notation formatter
-        string reqLatex = ScientificNotationFormatter.ToLatexScientific(req);
-        string tauLatex = ScientificNotationFormatter.ToLatexScientific(tau);
-        string tauMsLatex = ScientificNotationFormatter.ToLatexScientific(tau * 1000.0);
-        string fcLatex = ScientificNotationFormatter.ToLatexScientific(fc);
-        string vsLatex = ScientificNotationFormatter.ToLatexScientific(vsVal);
+        // Display formatting (user convention 2026-10-18): every visible number keeps
+        // at most two decimals and uses the textbook engineering unit. Structured
+        // values above stay full precision; only the rendered text is rounded.
+        string reqLatex = TeachingDisplay.Latex(req, QuantityKind.Resistance);
+        string tauLatex = TeachingDisplay.Latex(tau, QuantityKind.Time);
+        string fcLatex = TeachingDisplay.Latex(fc, QuantityKind.Frequency);
+        string vsLatex = TeachingDisplay.Latex(vsVal, QuantityKind.Voltage);
+        string omegaCLatex = TeachingDisplay.LatexNumber(omegaC, QuantityKind.Ratio) + @"\text{ rad/s}";
+        string reqText = TeachingDisplay.Text(req, QuantityKind.Resistance);
+        string tauText = TeachingDisplay.Text(tau, QuantityKind.Time);
+        string fcText = TeachingDisplay.Text(fc, QuantityKind.Frequency);
 
-        solution.SummaryText = $"一阶 {(_isRl ? "RL" : "RC")} 电路拓扑分析完成：等效电阻 Req = {reqLatex} Ω，时间常数 τ = {tauLatex} s ({tauMsLatex} ms)，特征截止频率 fc = {fcLatex} Hz。";
+        solution.SummaryText = $"一阶 {(_isRl ? "RL" : "RC")} 电路拓扑分析完成：等效电阻 Req = {reqText}，时间常数 τ = {tauText}，特征截止频率 fc = {fcText}。";
 
         // Strictly suppress fictitious BJT parameters
         solution.QPoint = new QPointInfo
@@ -95,12 +105,12 @@ public class FirstOrderRcStrategy : ICircuitStrategy
 
         solution.AcParameters = new AcParametersInfo
         {
-            VoltageGain = "1.00 (0 dB)",
-            InputResistance = ScientificNotationFormatter.FormatWithUnit(req, "Ω"),
+            VoltageGain = "1 (0 dB)",
+            InputResistance = reqText,
             OutputResistance = "0 Ω",
             LowerCutoffFreq = "0 Hz",
-            UpperCutoffFreq = ScientificNotationFormatter.FormatWithUnit(fc, "Hz"),
-            Bandwidth = ScientificNotationFormatter.FormatWithUnit(fc, "Hz")
+            UpperCutoffFreq = fcText,
+            Bandwidth = fcText
         };
 
         // ---------------------------------------------------------------------
@@ -113,9 +123,9 @@ public class FirstOrderRcStrategy : ICircuitStrategy
             Title = "端口戴维南等效电阻 Req 求解",
             MethodName = "戴维南等效法",
             Content = $"将电路中独立激励源（电压源短路，电流源开路）置零，从储能元件 {(_isRl ? lId : cId)} 两引脚端口看入的戴维南等效输入电阻。",
-            LatexFormula = $@"R_{{eq}} = R_{{{rId}}}",
-            SubstitutionFormula = $@"R_{{eq}} = {reqLatex}\;\Omega",
-            ResultValue = $"{ScientificNotationFormatter.ToUnicodeScientific(req)} Ω",
+            LatexFormula = $@"R_{{eq}} = R_{rId}",
+            SubstitutionFormula = $@"R_{{eq}} = {reqLatex}",
+            ResultValue = reqText,
             Status = "Completed"
         });
 
@@ -128,14 +138,16 @@ public class FirstOrderRcStrategy : ICircuitStrategy
             BadgeText = "第 2 步",
             Title = "时域暂态三要素（初始值、稳态值、时间常数）分析",
             MethodName = "三要素分析法",
-            Content = $"根据储能元件换路定律：换路瞬间电容电压不突变 u_C(0+) = u_C(0-) = 0V；换路达到新稳态时，电容视为开路，两端电压等于电源开路电压 u_C(∞) = {vsId}。",
+            Content = _isRl
+                ? "按零初始电流的阶跃输入分析：电感电流连续，稳态电感短路。传递函数对应归一化电感电流。"
+                : "按零初始电压的阶跃输入分析：电容电压连续，稳态电容开路；高通输出取串联电阻总电压。",
             LatexFormula = _isRl
                 ? @"i_L(0^+) = 0\text{ A},\quad i_L(\infty) = \frac{V_S}{R_{eq}},\quad \tau = \frac{L}{R_{eq}}"
                 : @"u_C(0^+) = 0\text{ V},\quad u_C(\infty) = V_S,\quad \tau = R_{eq} \cdot C",
             SubstitutionFormula = _isRl
-                ? $@"i_L(0^+) = 0\text{{ A}},\quad i_L(\infty) = {ScientificNotationFormatter.ToLatexScientific(vsVal / req)}\text{{ A}},\quad \tau = {tauMsLatex}\text{{ ms}}"
-                : $@"u_C(0^+) = 0\text{{ V}},\quad u_C(\infty) = {vsLatex}\text{{ V}},\quad \tau = {tauLatex}\text{{ s}} = {tauMsLatex}\text{{ ms}}",
-            ResultValue = $"τ = {ScientificNotationFormatter.ToUnicodeScientific(tau * 1000.0)} ms",
+                ? $@"i_L(0^+) = 0\text{{ A}},\quad i_L(\infty) = {TeachingDisplay.Latex(vsVal / req, QuantityKind.Current)},\quad \tau = {tauLatex}"
+                : $@"u_C(0^+) = 0\text{{ V}},\quad u_C(\infty) = {vsLatex},\quad \tau = {tauLatex}",
+            ResultValue = $"τ = {tauText}",
             Status = "Completed"
         });
 
@@ -153,9 +165,11 @@ public class FirstOrderRcStrategy : ICircuitStrategy
                 ? @"i_L(t) = i_L(\infty) + \left[i_L(0^+) - i_L(\infty)\right] e^{-\frac{t}{\tau}} = \frac{V_S}{R_{eq}} \left(1 - e^{-\frac{t}{\tau}}\right)"
                 : @"u_C(t) = u_C(\infty) + \left[u_C(0^+) - u_C(\infty)\right] e^{-\frac{t}{\tau}} = V_S \left(1 - e^{-\frac{t}{\tau}}\right)",
             SubstitutionFormula = _isRl
-                ? $@"i_L(t) = {ScientificNotationFormatter.ToLatexScientific(vsVal / req)} \left(1 - e^{{-\frac{{t}}{{{tauLatex}}}}}\right)\text{{ A}}"
-                : $@"u_C(t) = {vsLatex} \left(1 - e^{{-\frac{{t}}{{{tauLatex}}}}}\right)\text{{ V}}",
-            ResultValue = $"u_C(3τ) = {ScientificNotationFormatter.ToUnicodeScientific(vsVal * 0.9502)} V, u_C(5τ) = {ScientificNotationFormatter.ToUnicodeScientific(vsVal * 0.9933)} V",
+                ? $@"i_L(t) = {TeachingDisplay.Latex(vsVal / req, QuantityKind.Current)} \left(1 - e^{{-\frac{{t}}{{{tauLatex}}}}}\right)"
+                : $@"u_C(t) = {vsLatex} \left(1 - e^{{-\frac{{t}}{{{tauLatex}}}}}\right)",
+            ResultValue = _isRl
+                ? $"i_L(3τ) = {TeachingDisplay.Text(vsVal / req * 0.9502, QuantityKind.Current)}"
+                : $"u_C(3τ) = {TeachingDisplay.Text(vsVal * 0.9502, QuantityKind.Voltage)}, u_C(5τ) = {TeachingDisplay.Text(vsVal * 0.9933, QuantityKind.Voltage)}",
             Status = "Completed"
         });
 
@@ -172,8 +186,8 @@ public class FirstOrderRcStrategy : ICircuitStrategy
             LatexFormula = _isRl
                 ? @"H(s) = \frac{1}{1 + s\tau},\quad \omega_c = \frac{R_{eq}}{L},\quad f_c = \frac{\omega_c}{2\pi} = \frac{R_{eq}}{2\pi L}"
                 : @"H(s) = \frac{1}{1 + s\tau},\quad \omega_c = \frac{1}{R_{eq} C},\quad f_c = \frac{\omega_c}{2\pi} = \frac{1}{2\pi R_{eq} C}",
-            SubstitutionFormula = $@"H(s) = \frac{{1}}{{1 + {tauLatex} s}},\quad \omega_c = {ScientificNotationFormatter.ToLatexScientific(omegaC)}\text{{ rad/s}},\quad f_c = {fcLatex}\text{{ Hz}}",
-            ResultValue = $"fc = {ScientificNotationFormatter.ToUnicodeScientific(fc)} Hz",
+            SubstitutionFormula = $@"H(s) = \frac{{1}}{{1 + {tauLatex} s}},\quad \omega_c = {omegaCLatex},\quad f_c = {fcLatex}",
+            ResultValue = $"fc = {fcText}",
             Status = "Completed"
         });
 
@@ -186,24 +200,33 @@ public class FirstOrderRcStrategy : ICircuitStrategy
             BadgeText = "第 5 步",
             Title = "正弦稳态幅频与相频特性分析 (渐近线波特图特性)",
             MethodName = "频域波特图渐近线分析",
-            Content = $"分析正弦稳态幅频与相频特性：通带内幅值增益为 1 (0 dB)；截止频率处幅值衰减 3 dB (0.707)，产生 -45° 相位滞后；高频阻带以 -20 dB/dec (-6 dB/oct) 固定斜率滚降。",
+            Content = $"分析正弦稳态幅频与相频特性：通带内幅值增益为 1 (0 dB)；截止频率处幅值衰减 3 dB (0.71)，产生 -45° 相位滞后；高频阻带以 -20 dB/dec (-6 dB/oct) 固定斜率滚降。",
             LatexFormula = @"|A_u(jf)| = \frac{1}{\sqrt{1 + (f/f_c)^2}},\quad 20\lg |A_u(jf)| = -10\lg\left[1 + \left(\frac{f}{f_c}\right)^2\right]\text{ dB},\quad \varphi(f) = -\arctan\left(\frac{f}{f_c}\right)",
-            SubstitutionFormula = $@"|A_u(jf_c)| = \frac{{1}}{{\sqrt{{2}}}} \approx 0.707\;(-3.01\text{{ dB}}),\quad \varphi(f_c) = -45.0^\circ",
+            SubstitutionFormula = $@"|A_u(jf_c)| = \frac{{1}}{{\sqrt{{2}}}} \approx 0.71\;(-3.01\text{{ dB}}),\quad \varphi(f_c) = -45^\circ",
             ResultValue = "通带增益: 0 dB, 滚降斜率: -20 dB/dec",
             Status = "Completed"
         });
 
+        if (highPass)
+        {
+            solution.AcParameters.LowerCutoffFreq = fcText;
+            solution.AcParameters.UpperCutoffFreq = "理想模型无上限";
+            solution.AcParameters.Bandwidth = "理想高通模型";
+            var transfer = solution.Steps[3];
+            transfer.Content = "输出取串联电阻总电压，高通传递函数在直流为零，高频趋于一。电容状态量的阶跃响应仍见上一步。";
+            transfer.LatexFormula = @"H(s)=\frac{s\tau}{1+s\tau},\quad f_c=\frac{1}{2\pi R_{eq}C}";
+            transfer.SubstitutionFormula = $@"H(s)=\frac{{{tauLatex}s}}{{1+{tauLatex}s}}";
+            var bode = solution.Steps[4];
+            bode.Content = "理想高通：低频以 +20 dB/dec 上升，高频趋于 0 dB；截止点增益为 -3.01 dB、相位 +45°。";
+            bode.LatexFormula = @"|H(j\omega)|=\frac{\omega\tau}{\sqrt{1+(\omega\tau)^2}},\quad \varphi=90^\circ-\arctan(\omega\tau)";
+            bode.SubstitutionFormula = @"|H(j\omega_c)|=1/\sqrt{2},\quad \varphi(\omega_c)=45^\circ";
+            bode.ResultValue = "高频增益 0 dB，低频斜率 +20 dB/dec";
+        }
         return Task.FromResult(solution);
     }
 
     private static double GetSiValue(CircuitElement el)
     {
-        double multiplier = 1.0;
-        foreach (var opt in EngineeringUnits.ResistanceUnits) if (opt.Symbol == el.UnitSymbol) multiplier = opt.Multiplier;
-        foreach (var opt in EngineeringUnits.CapacitanceUnits) if (opt.Symbol == el.UnitSymbol) multiplier = opt.Multiplier;
-        foreach (var opt in EngineeringUnits.InductanceUnits) if (opt.Symbol == el.UnitSymbol) multiplier = opt.Multiplier;
-        foreach (var opt in EngineeringUnits.VoltageUnits) if (opt.Symbol == el.UnitSymbol) multiplier = opt.Multiplier;
-        foreach (var opt in EngineeringUnits.CurrentUnits) if (opt.Symbol == el.UnitSymbol) multiplier = opt.Multiplier;
-        return el.DisplayNumber * multiplier;
+        return NetlistExtractor.ConvertToBaseSi(el.Type, el.DisplayNumber, el.UnitSymbol);
     }
 }

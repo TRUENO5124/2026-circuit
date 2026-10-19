@@ -181,7 +181,11 @@ public class ElectricalNetlist
     public bool HasGround => GroundNet != null;
 
     public ElectricalNet? FindNetForPin(string elementId, string pinId) =>
-        Nets.FirstOrDefault(n => n.ContainsPin(elementId, pinId));
+        Nets.FirstOrDefault(n => n.ContainsPin(elementId, pinId) ||
+            (pinId is "1" or "pos" && n.ContainsPin(elementId, "+")) ||
+            (pinId is "2" or "neg" && n.ContainsPin(elementId, "-")) ||
+            (pinId == "+" && (n.ContainsPin(elementId, "pos") || n.ContainsPin(elementId, "1"))) ||
+            (pinId == "-" && (n.ContainsPin(elementId, "neg") || n.ContainsPin(elementId, "2"))));
 
     public ElectricalNode? FindNodeForPin(string elementId, string pinId)
     {
@@ -217,9 +221,9 @@ public class ElectricalNetlist
         if (!HasGround)
         {
             result.Issues.Add(new NetlistValidationIssue(
-                NetlistValidationSeverity.Warning,
+                NetlistValidationSeverity.Error,
                 "NO_GROUND",
-                "电路中未找到参考地 (GND)，已自动将负极网络作为 0V 参考点。"));
+                "电路中没有可用的参考地，请添加 GND 并连接到电路。"));
         }
 
         // 2. Short circuit check (both terminals of a branch connected to the same node)
@@ -227,9 +231,7 @@ public class ElectricalNetlist
         {
             if (branch.PositiveNode.Index == branch.NegativeNode.Index)
             {
-                var severity = branch.ElementType is ElementType.DcVoltageSource or ElementType.AcVoltageSource
-                    ? NetlistValidationSeverity.Error
-                    : NetlistValidationSeverity.Warning;
+                var severity = NetlistValidationSeverity.Error;
 
                 result.Issues.Add(new NetlistValidationIssue(
                     severity,
@@ -243,22 +245,34 @@ public class ElectricalNetlist
         foreach (var el in Elements.Values)
         {
             if (el.Type == ElementType.Ground) continue;
+            try
+            {
+                var value = NetlistExtractor.ConvertToBaseSi(el.Type, el.DisplayNumber, el.UnitSymbol);
+                if (!double.IsFinite(value) ||
+                    ((el.Type is ElementType.Resistor or ElementType.Capacitor or ElementType.CapacitorPolarized or ElementType.Inductor or ElementType.BjtNpn or ElementType.BjtPnp) && value <= 0) ||
+                    (el.IsAcSource && (!double.IsFinite(el.FrequencyHz) || el.FrequencyHz <= 0)))
+                    throw new InvalidOperationException("数值必须有限，电阻/储能元件/β/频率须大于零。");
+            }
+            catch (Exception ex)
+            {
+                result.Issues.Add(new(NetlistValidationSeverity.Error, "INVALID_PARAMETER", $"元件 {el.Id}: {ex.Message}", el.Id));
+            }
             foreach (var pin in el.Pins)
             {
                 var net = FindNetForPin(el.Id, pin.Id);
                 if (net == null)
                 {
                     result.Issues.Add(new NetlistValidationIssue(
-                        NetlistValidationSeverity.Warning,
+                        NetlistValidationSeverity.Error,
                         "FLOATING_PIN",
                         $"元件 '{el.Id}' 的引脚 '{pin.Name}' ({pin.Id}) 未连接任何导线 (悬空)。",
                         el.Id,
                         pin.Id));
                 }
-                else if (net.ConnectedPins.Count == 1 && net.ConnectedWireIds.Count == 0)
+                else if (net.ConnectedPins.Count == 1 && !net.IsGround)
                 {
                     result.Issues.Add(new NetlistValidationIssue(
-                        NetlistValidationSeverity.Warning,
+                        NetlistValidationSeverity.Error,
                         "DEGREE_ZERO_PIN",
                         $"元件 '{el.Id}' 的引脚 '{pin.Name}' 未形成有效电气回路。",
                         el.Id,
@@ -276,6 +290,27 @@ public class ElectricalNetlist
                 "致命错误：电源网络 (VCC) 与参考地网络 (GND) 发生直通短路！"));
         }
 
+        if (HasGround && !Elements.Values.Any(e => e.Type == ElementType.Ground))
+            result.Issues.Add(new(NetlistValidationSeverity.Warning, "IMPLICIT_GROUND", "未放置 GND 符号，已选择参考网络；请核对参考节点是否符合电路定义。"));
+
+        // Reachability through devices catches isolated loops and orphan conductors.
+        if (GroundNet != null)
+        {
+            var reached = new HashSet<int> { GroundNet.NetId };
+            bool changed;
+            do
+            {
+                changed = false;
+                foreach (var el in Elements.Values)
+                {
+                    var nets = el.Pins.Select(p => FindNetForPin(el.Id, p.Id)).Where(n => n != null).Select(n => n!.NetId).Distinct().ToList();
+                    if (nets.Any(reached.Contains)) foreach (var id in nets) changed |= reached.Add(id);
+                }
+            } while (changed);
+            if (Nets.Any(n => !reached.Contains(n.NetId)))
+                result.Issues.Add(new(NetlistValidationSeverity.Error, "DISCONNECTED_NETWORK", "存在与参考电路分离的元件或悬空导线，请连接或删除后再求解。"));
+        }
+
         return result;
     }
 
@@ -291,29 +326,30 @@ public class ElectricalNetlist
 
         foreach (var b in Branches)
         {
-            string n1 = b.PositiveNode.Name;
-            string n2 = b.NegativeNode.Name;
+            string n1 = b.PositiveNode.Index.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            string n2 = b.NegativeNode.Index.ToString(System.Globalization.CultureInfo.InvariantCulture);
             string id = b.Element.Id;
 
             switch (b.ElementType)
             {
                 case ElementType.Resistor:
-                    sb.AppendLine($"R_{id} {n1} {n2} {b.ValueSI:G6}");
+                    sb.AppendLine($"R_{id} {n1} {n2} {b.ValueSI.ToString("G6", System.Globalization.CultureInfo.InvariantCulture)}");
                     break;
                 case ElementType.Capacitor:
-                    sb.AppendLine($"C_{id} {n1} {n2} {b.ValueSI:G6}");
+                case ElementType.CapacitorPolarized:
+                    sb.AppendLine($"C_{id} {n1} {n2} {b.ValueSI.ToString("G6", System.Globalization.CultureInfo.InvariantCulture)}");
                     break;
                 case ElementType.Inductor:
-                    sb.AppendLine($"L_{id} {n1} {n2} {b.ValueSI:G6}");
+                    sb.AppendLine($"L_{id} {n1} {n2} {b.ValueSI.ToString("G6", System.Globalization.CultureInfo.InvariantCulture)}");
                     break;
                 case ElementType.DcVoltageSource:
-                    sb.AppendLine($"V_{id} {n1} {n2} DC {b.ValueSI:G6}");
+                    sb.AppendLine($"V_{id} {n1} {n2} DC {b.ValueSI.ToString("G6", System.Globalization.CultureInfo.InvariantCulture)}");
                     break;
                 case ElementType.AcVoltageSource:
-                    sb.AppendLine($"V_{id} {n1} {n2} AC {b.ValueSI:G6}");
+                    sb.AppendLine($"V_{id} {n1} {n2} AC {b.ValueSI.ToString("G6", System.Globalization.CultureInfo.InvariantCulture)}");
                     break;
                 case ElementType.DcCurrentSource:
-                    sb.AppendLine($"I_{id} {n1} {n2} DC {b.ValueSI:G6}");
+                    sb.AppendLine($"I_{id} {n2} {n1} DC {b.ValueSI.ToString("G6", System.Globalization.CultureInfo.InvariantCulture)}");
                     break;
                 case ElementType.Diode:
                     sb.AppendLine($"D_{id} {n1} {n2} 1N4148");
@@ -325,11 +361,11 @@ public class ElectricalNetlist
         {
             if (t.DeviceType == ElementType.BjtNpn)
             {
-                sb.AppendLine($"Q_{t.Element.Id} {t.CollectorNode?.Name ?? "0"} {t.BaseNode?.Name ?? "0"} {t.EmitterNode?.Name ?? "0"} 2N3904");
+                sb.AppendLine($"Q_{t.Element.Id} {t.CollectorNode?.Index.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "0"} {t.BaseNode?.Index.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "0"} {t.EmitterNode?.Index.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "0"} 2N3904");
             }
             else if (t.DeviceType == ElementType.BjtPnp)
             {
-                sb.AppendLine($"Q_{t.Element.Id} {t.CollectorNode?.Name ?? "0"} {t.BaseNode?.Name ?? "0"} {t.EmitterNode?.Name ?? "0"} 2N3906");
+                sb.AppendLine($"Q_{t.Element.Id} {t.CollectorNode?.Index.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "0"} {t.BaseNode?.Index.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "0"} {t.EmitterNode?.Index.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "0"} 2N3906");
             }
         }
 

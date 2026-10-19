@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Circuit Learning Assistant application icon</title>
+  <desc id="desc">A flat white circuit loop combining a resistor and an oscilloscope waveform on a solid blue rounded square, with one amber analysis node.</desc>
+
+  <!-- Flat rounded Windows app tile. Outside the tile remains transparent. -->
+  <rect x="24" y="24" width="464" height="464" rx="108" fill="#1769C2"/>
+
+  <!-- Upper branch: wire plus an unmistakable resistor symbol. -->
+  <path d="M122 248V196C122 176 138 160 158 160H194L218 116L248 204L282 116L310 160H354C374 160 390 176 390 196V248"
+        fill="none" stroke="#F7FBFF" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Lower branch: oscilloscope waveform closes the circuit. -->
+  <path d="M390 270V318C390 338 374 354 354 354H338C310 354 310 286 282 286C254 286 254 354 226 354C198 354 198 286 170 286C142 286 142 354 114 354C94 354 122 338 122 318V270"
+        fill="none" stroke="#F7FBFF" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Connection and analysis nodes remain legible at taskbar sizes. -->
+  <circle cx="122" cy="259" r="22" fill="#103879" stroke="#F7FBFF" stroke-width="12"/>
+  <circle cx="390" cy="259" r="24" fill="#FFB547" stroke="#F7FBFF" stroke-width="10"/>
+  <circle cx="254" cy="342" r="10" fill="#1769C2" stroke="#F7FBFF" stroke-width="6"/>
+</svg>

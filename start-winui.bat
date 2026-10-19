@@ -1,20 +1,28 @@
 @echo off
+setlocal
 cd /d "%~dp0"
 
-echo ========================================================
-echo   Circuit Learning Assistant (WinUI 3 Native Desktop)
-echo ========================================================
-echo.
+rem Normal startup runs the existing app without PowerShell or source scans.
+rem Use start-winui.bat --build after changing application code.
+if /I "%~1"=="--build" goto build
+if not "%~1"=="" goto helper
+if not exist "%~dp0apps\desktop-winui\bin\Debug\net9.0-windows10.0.26100.0\win-x64\CircuitAssistant.exe" goto helper
+start "" /D "%~dp0apps\desktop-winui\bin\Debug\net9.0-windows10.0.26100.0\win-x64" "%~dp0apps\desktop-winui\bin\Debug\net9.0-windows10.0.26100.0\win-x64\CircuitAssistant.exe"
+exit /b %errorlevel%
 
-set "EXE_PATH=%~dp0apps\desktop-winui\bin\Debug\net9.0-windows10.0.26100.0\win-x64\CircuitAssistant.exe"
+:build
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\Start-CircuitAssistant.ps1" -ForceBuild
+goto result
 
-if exist "%EXE_PATH%" (
-    echo Launching native desktop application...
-    start "" "%EXE_PATH%"
-    echo Application started successfully.
-) else (
-    echo Building and launching application...
-    dotnet run --project "%~dp0apps\desktop-winui\CircuitAssistant.csproj"
+:helper
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\Start-CircuitAssistant.ps1" %*
+
+:result
+if errorlevel 1 (
+    echo.
+    echo CircuitAssistant could not be started.
+    pause
+    exit /b 1
 )
 
-echo.
+endlocal

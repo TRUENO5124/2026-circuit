@@ -1,0 +1,162 @@
+﻿{
+    "phase":  "round8",
+    "exe":  "D:\\BJTU\\2026年大创\\apps\\desktop-winui\\bin\\_verify\\CircuitAssistant.exe",
+    "exeLastWriteTime":  "2026-10-18T18:19:27.1657619+08:00",
+    "b07":  "C:\\dsh_b07\\b07.circuit",
+    "capturedAt":  "2026-10-18T18:29:19.1955968+08:00",
+    "allChecksPassed":  false,
+    "checks":  [
+                   {
+                       "id":  "solve-success",
+                       "pass":  true,
+                       "detail":  "求解完成 · 晶体管共射极放大电路 · 6 个步骤"
+                   },
+                   {
+                       "id":  "no-resistor-branch-error",
+                       "pass":  true,
+                       "detail":  "匹配数=0"
+                   },
+                   {
+                       "id":  "dc-group-header",
+                       "pass":  true,
+                       "detail":  "name=[直流等效电路（DC 分析）] y=445"
+                   },
+                   {
+                       "id":  "dc-step2-electrolytic-check",
+                       "pass":  true,
+                       "detail":  "name=[电解电容 C3 直流偏置与功能特性核验] y=535"
+                   },
+                   {
+                       "id":  "ac-group-header",
+                       "pass":  false,
+                       "detail":  "缺失"
+                   },
+                   {
+                       "id":  "ac-av-step",
+                       "pass":  false,
+                       "detail":  "缺失"
+                   },
+                   {
+                       "id":  "groups-order",
+                       "pass":  false,
+                       "detail":  "DC组(步骤1/2) → AC组(步骤3-6) 顺序命中"
+                   },
+                   {
+                       "id":  "av-value-34.25",
+                       "pass":  false,
+                       "detail":  "匹配数=0"
+                   },
+                   {
+                       "id":  "aus-value-32.91",
+                       "pass":  false,
+                       "detail":  "匹配数=0"
+                   },
+                   {
+                       "id":  "metrics-rs-row",
+                       "pass":  true,
+                       "detail":  "匹配数=1"
+                   },
+                   {
+                       "id":  "metrics-aus-row",
+                       "pass":  true,
+                       "detail":  "匹配数=1"
+                   },
+                   {
+                       "id":  "qpoint-ibq-20.69uA",
+                       "pass":  true,
+                       "detail":  "匹配数=1"
+                   },
+                   {
+                       "id":  "qpoint-icq-2.07mA",
+                       "pass":  true,
+                       "detail":  "匹配数=1"
+                   },
+                   {
+                       "id":  "qpoint-vceq-7.84V",
+                       "pass":  true,
+                       "detail":  "匹配数=1"
+                   },
+                   {
+                       "id":  "metrics-rs-value-50ohm",
+                       "pass":  true,
+                       "detail":  "匹配数=1"
+                   },
+                   {
+                       "id":  "metrics-aus-value-32.91",
+                       "pass":  true,
+                       "detail":  "匹配数=1"
+                   },
+                   {
+                       "id":  "normal-template-no-rs-row",
+                       "pass":  true,
+                       "detail":  "匹配数=0"
+                   },
+                   {
+                       "id":  "normal-template-no-aus-row",
+                       "pass":  true,
+                       "detail":  "匹配数=0"
+                   }
+               ],
+    "screenshots":  [
+                        {
+                            "name":  "01_b07_derivation_top_full",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\round8\\01_b07_derivation_top_full.png",
+                            "note":  "B07 derivation top: DC group header + step1/2"
+                        },
+                        {
+                            "name":  "02_b07_derivation_top_panel",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\round8\\02_b07_derivation_top_panel.png",
+                            "note":  "right panel: DC group region=(1270,369,609x601)"
+                        },
+                        {
+                            "name":  "03_b07_step2_electrolytic_full",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\round8\\03_b07_step2_electrolytic_full.png",
+                            "note":  "B07 DC step2: electrolytic C3 polarity check"
+                        },
+                        {
+                            "name":  "04_b07_step2_electrolytic_region",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\round8\\04_b07_step2_electrolytic_region.png",
+                            "note":  "electrolytic check card region=(1361,425,426x300)"
+                        },
+                        {
+                            "name":  "05_b07_ac_group_full",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\round8\\05_b07_ac_group_full.png",
+                            "note":  "B07 AC group header + AC steps"
+                        },
+                        {
+                            "name":  "07_b07_av_step_full",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\round8\\07_b07_av_step_full.png",
+                            "note":  "B07 AC step4: Av/Aus formulas + substitution"
+                        },
+                        {
+                            "name":  "08_b07_av_formula_region",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\round8\\08_b07_av_formula_region.png",
+                            "note":  "Av/Aus formulas + substitution region=(1347,533,479x444)"
+                        },
+                        {
+                            "name":  "09_b07_av_result_full",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\round8\\09_b07_av_result_full.png",
+                            "note":  "B07 AC step4: substitution + result (Av=-34.25, Aus=-32.91)"
+                        },
+                        {
+                            "name":  "11_b07_metrics_full",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\round8\\11_b07_metrics_full.png",
+                            "note":  "B07 metrics tab: Q point + AC card (Rs/Aus rows)"
+                        },
+                        {
+                            "name":  "12_b07_qpoint_region",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\round8\\12_b07_qpoint_region.png",
+                            "note":  "B07 Q point card region=(1317,398,291x238)"
+                        },
+                        {
+                            "name":  "13_b07_ac_metrics_region",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\round8\\13_b07_ac_metrics_region.png",
+                            "note":  "B07 AC card incl Rs/Aus rows region=(1317,654,303x341)"
+                        },
+                        {
+                            "name":  "14_normal_template_metrics_full",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\round8\\14_normal_template_metrics_full.png",
+                            "note":  "control: normal CE template metrics (no Rs/Aus rows expected)"
+                        }
+                    ]
+}

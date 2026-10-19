@@ -1,763 +1,190 @@
-# 展示层实现方案技术论证报告
+# 展示层实现报告：WinUI 3 / XAML / Win2D
 
-> **项目**: 面向电子电路学习的可解释分析辅助系统
-> **阶段**: Issue I5/I6/I9/I10 — 展示层建设
-> **日期**: 2026 年 6 月
-> **性质**: 技术方案论证文档
+> 更新：2026-10-18（第九轮能力增量：BJT 小信号参数 r_bb'/r_be(h_ie) 两处编辑框、0=自动提示、宏参数与元件双向同步、无效输入归零；第八轮：实时指标卡 Rs/Aus 两行、报告导出同步两行、B07 教学变体分组显示、窗口截图验收与 AC 卡 Rs/Aus 叠字修复；第七轮：Win2D 自绘公式框、DC/AC 分组卡片、教材估算法两位小数显示、Q 点不再双口径）；主客户端是 `apps/desktop-winui`。早期 React/HTML 方案完整保存在[历史副本](archive/2026-10-17-before-winui-doc-sync/presentation-layer-technical-report.md)。本文逐项说明当前界面、交互、公式、文件、报告导出与导入实现，所有“已实现”均不代替真实窗口验收。
 
----
+## 1. 展示层边界
 
-## 当前实现状态（2026-07-23 复核更新）
-
-> 本文是技术方案论证，不等同于交付清单。当前事实以源码、`npm run check` 和 `technical-document-review-20260716.md` 为准。
-
-- **已实现**：React/TypeScript/React Flow 编辑器、18 类元件符号、参数编辑与图校验、FastAPI 任务轮询、KaTeX 结果展示、独立 HTML 报告导出。
-- **实现偏差**：实际本地服务为 FastAPI，不是文中架构图的 Express；会话上传通知使用 SSE，不是 WebSocket。
-- **部分实现**：API 已提供会话、token 上传、SSE 和手机捕获页，但编辑器尚无桌面端 QR 创建/展示入口。
-- **未实现**：撤销/重做和 PDF/LaTeX/Circuitikz 导出。视觉识别后的自动拓扑导入已取消，不再属于实现缺口。浏览器视觉回归在本次复核中因测试工具 daemon 故障未完成。
-
----
-
-## 目录
-
-1. [摘要](#1-摘要)
-2. [问题定义与设计约束](#2-问题定义与设计约束)
-3. [核心方案：React + 轻量编辑器 + KaTeX 渲染](#3-核心方案react--轻量编辑器--katex-渲染)
-4. [电路图编辑器方案论证](#4-电路图编辑器方案论证)
-5. [LaTeX 公式渲染方案论证](#5-latex-公式渲染方案论证)
-6. [分析结果展示方案论证](#6-分析结果展示方案论证)
-7. [局域网手机上传方案论证](#7-局域网手机上传方案论证)
-8. [报告导出方案论证](#8-报告导出方案论证)
-9. [文献综述与相关研究](#9-文献综述与相关研究)
-10. [风险分析与应对策略](#10-风险分析与应对策略)
-11. [结论](#11-结论)
-12. [参考文献](#12-参考文献)
-
----
-
-## 1. 摘要
-
-展示层是本系统的用户交互界面，负责将数据层的 `CircuitGraph` 和分析引擎层的 `AnalysisResult` 转化为学生可理解、可操作、可导出的教学内容。展示层包括以下四个核心模块：
-
-1. **电路图编辑器**：支持拓扑修正、元件参数校对、拖拽连线
-2. **LaTeX 公式渲染**：将分析引擎输出的符号表达式渲染为可读的数学公式
-3. **分析结果展示**：等效电路图、分步骤解题过程、知识点标注、警告信息
-4. **局域网手机上传**：手机扫码拍照上传电路图到电脑端
-
-本文档论证了以下核心设计决策：
-
-1. **采用 React + TypeScript 作为前端框架**，与数据层的 Zod Schema 天然集成
-2. **采用 React Flow 作为电路图编辑器的基础库**，通过自定义节点和连线实现电路图编辑
-3. **采用 KaTeX 作为 LaTeX 渲染引擎**，在渲染速度和 LaTeX 覆盖度之间取得最优平衡
-4. **采用"结构化结果 + 模板渲染"的分离架构**，分析引擎只输出结构化数据，展示层负责渲染
-5. **采用 QR 码 + WebSocket 的局域网手机上传方案**，实现手机拍照→电脑解题的闭环
-
----
-
-## 2. 问题定义与设计约束
-
-### 2.1 展示层需要解决的核心问题
-
-| 模块 | 输入 | 输出 | 用户交互 |
-|------|------|------|----------|
-| **电路图编辑器** | `CircuitGraph` JSON | 修正后的 `CircuitGraph` JSON | 拖拽元件、连线、修改参数 |
-| **LaTeX 公式渲染** | 符号表达式字符串 | 渲染后的数学公式 | 无（纯展示） |
-| **分析结果展示** | `AnalysisResult` JSON | 可视化的分析报告 | 浏览、展开/折叠步骤 |
-| **手机上传** | 手机拍摄的照片 | 上传到本地服务的图片 | 扫码→拍照→上传 |
-| **报告导出** | 分析结果 + 电路图 | PDF/Word/LaTeX 文件 | 一键导出 |
-
-### 2.2 关键设计约束
-
-| 约束 | 说明 |
-|------|------|
-| **本地优先** | 所有渲染和交互在浏览器本地完成，不依赖云端 |
-| **轻量级** | 第一阶段不做完整 EDA 软件，编辑器只需支持拓扑修正 |
-| **移动端兼容** | 手机上传页面需要适配移动端浏览器 |
-| **实时性** | 手机上传后电脑端需要实时感知（WebSocket/SSE） |
-| **可导出** | 分析结果需要导出为 PDF/Word/LaTeX 格式 |
-| **与数据层对齐** | 所有交互的数据格式必须与 Zod Schema 一致 |
-
----
-
-## 3. 核心方案：React + 轻量编辑器 + KaTeX 渲染
-
-### 3.1 前端技术栈选型
-
-| 方案 | 类型安全 | 生态成熟度 | 学习成本 | 与数据层集成 |
-|------|----------|-----------|----------|-------------|
-| **React + TypeScript** | ✅ | ✅ 非常成熟 | 中 | ✅ Zod 天然集成 |
-| Vue + TypeScript | ✅ | ✅ 成熟 | 低 | ✅ 需要适配 |
-| Svelte + TypeScript | ✅ | ⚠️ 较新 | 低 | ✅ 需要适配 |
-| 纯 HTML + JS | ❌ | ✅ | 低 | ❌ 需手动校验 |
-
-**选择 React + TypeScript 的理由**：
-
-1. **Zod 天然集成**: React 生态中 Zod 的使用最为广泛，与 React Hook Form、tRPC 等库无缝配合
-2. **组件化**: 电路图的每个元件可以封装为独立的 React 组件，支持复用和测试
-3. **状态管理**: React 的状态管理（useState/useReducer/Zustand）适合电路图编辑的增量更新
-4. **社区资源**: React 生态中有最丰富的图表/编辑器/表单库
-
-### 3.2 整体架构
+当前使用 XAML 定义页面和控件，C# 提供 MVVM 状态与事件处理，Win2D 负责原理图绘制。未在主软件嵌入 WebView、React、KaTeX 或 HTML 页面。
 
 ```text
-┌─────────────────────────────────────────────────────────────┐
-│                     前端 (React + TypeScript)                │
-├─────────────────────────────────────────────────────────────┤
-│  路由层 (React Router)                                       │
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐           │
-│  │ 编辑器页面   │ │ 分析结果页面 │ │ 手机上传页面 │           │
-│  │ /editor     │ │ /analysis   │ │ /capture    │           │
-│  └──────┬──────┘ └──────┬──────┘ └──────┬──────┘           │
-│         │               │               │                   │
-│  ┌──────▼───────────────▼───────────────▼──────┐           │
-│  │           共享状态层 (Zustand)                │           │
-│  │  - circuitGraph: CircuitGraph               │           │
-│  │  - analysisResult: AnalysisResult            │           │
-│  │  - session: SessionState                     │           │
-│  └──────────────────┬──────────────────────────┘           │
-│                     │                                       │
-│  ┌──────────────────▼──────────────────────────┐           │
-│  │           组件层                              │           │
-│  │  - CircuitEditor (React Flow)               │           │
-│  │  - LatexRenderer (KaTeX)                    │           │
-│  │  - AnalysisPanel (步骤/方程/等效电路)         │           │
-│  │  - QRCodeGenerator (qrcode.react)           │           │
-│  │  - ReportExporter (PDF/Word/LaTeX)          │           │
-│  └─────────────────────────────────────────────┘           │
-└─────────────────────────────────────────────────────────────┘
-         │                    │
-         ▼                    ▼
-┌─────────────────┐  ┌─────────────────┐
-│ 本地 API 服务    │  │ WebSocket 服务   │
-│ (Express)       │  │ (Socket.IO)     │
-│ - REST API      │  │ - 实时状态同步   │
-│ - 文件上传      │  │ - 手机连接通知   │
-└─────────────────┘  └─────────────────┘
+App → MainWindow（Mica / 自定义标题栏 / Frame）
+        → AnalysisStudioPage（XAML）
+             ↔ AnalysisStudioViewModel（状态、集合、生成命令）
+             ↔ CircuitCanvas（Win2D / 指针与键盘操作）
+             → CircuitSymbolPreview（原生矢量符号）
+             → MathFormulaView（Win2D CanvasControl 自绘公式 / 复制 LaTeX）
 ```
 
----
+`MainWindow` 直接进入工作台。未接入导航的示例页、旧设置页、独立符号展示页及其 ViewModel 已于 2026-10-19 清理；当前客户端采用上述单工作台入口。
 
-## 4. 电路图编辑器方案论证
+## 2. 控件与状态映射
 
-### 4.1 编辑器库选型
+| 旧方案概念 | 当前主客户端实现 | 代码位置（相对 `apps/desktop-winui/`） |
+|---|---|---|
+| React 页面/CSS | WinUI Page、Grid、资源、ThemeResource | `Views/AnalysisStudioPage.xaml`、`App.xaml` |
+| Zustand Store | ObservableObject、生成属性/命令 | `ViewModels/AnalysisStudioViewModel.cs` |
+| React Flow Node/Handle/Edge | CircuitElement/CircuitPin/CircuitWire + Win2D | `Models/CircuitElement.cs`、`Controls/CircuitCanvas.xaml.cs` |
+| SVG/DOM 元件 | `SymbolGeometry` 纯矢量几何 → Win2D/XAML 渲染 | `Models/SymbolGeometry.cs`、`CircuitCanvas`、`CircuitSymbolPreview` |
+| KaTeX HTML 输出 | Win2D `CanvasControl` 自绘真排版（`Math/` 解析+布局）+ 复制 LaTeX | `Controls/MathFormulaView.xaml/.cs`、`Math/*` |
+| 数字显示格式 | `TeachingDisplay` 教材单位/两位小数 + `ScientificNotationFormatter` | `Services/TeachingDisplay.cs`、`Services/ScientificNotationFormatter.cs` |
+| 任务提交/轮询 | 进程内 C# 策略调用 + 专用策略→MNA 回退 | `SolveCircuitAsync()` |
+| Web 文件下载 | WinRT 文件选择器 + JSON/文本/报告写入 | `Services/ProjectManagerService.cs` |
+| Web 报告导出 | 原生四格式报告（Markdown/LaTeX+Circuitikz/DOCX/HTML） | `Services/ReportExportService.cs` + 工程菜单命令 |
+| 原型格式导入 | 打开工程时自动探测 Web/Python CircuitGraph | `Services/WebCircuitGraphImporter.cs` |
 
-| 库 | 渲染 | 端口系统 | 连线路由 | 许可证 | 适合度 |
-|------|------|----------|----------|--------|--------|
-| **React Flow** | SVG (React 组件) | 通过 `<Handle>` 自定义 | 直线/步进/贝塞尔 | MIT | ★★★★☆ |
-| **JointJS** | SVG | 原生端口系统 | 正交/曼哈顿路由 | MIT (核心) | ★★★★★ |
-| **GoJS** | Canvas | 原生端口系统 | 内置路由 | 商业 | ★★★★☆ |
-| **mxGraph/draw.io** | SVG+VML | 需自定义 | 内置路由 | Apache 2.0 | ★★★☆☆ |
-| **Konva.js** | Canvas | 需自定义 | 需自定义 | MIT | ★★☆☆☆ |
+页面与画布使用双向依赖属性、集合通知和事件桥接；Loaded 重复触发时不会重复注册画布事件。ViewModel 负责工程/求解状态，画布仍负责大量选择和几何修改，页面代码负责快捷键、拖放与事件接线；不能写成完全没有 code-behind 的纯 MVVM。
 
-**选择 React Flow 的理由**：
+## 3. 工作台布局与生命周期
 
-1. **React 原生**: 与项目的 React + TypeScript 技术栈无缝集成
-2. **MIT 开源**: 无商业许可限制
-3. **自定义节点**: 通过 React 组件实现电路元件的渲染，完全可控
-4. **活跃维护**: 由 xyflow 团队维护，社区活跃
-5. **轻量级**: 不需要 JointJS 的复杂端口系统，电路图编辑器只需支持拓扑修正
+`AnalysisStudioPage.xaml` 定义顶部工程菜单/操作、三栏工作区和状态区域：
 
-### 4.2 电路元件的 React Flow 映射
+| 区域 | 当前内容 |
+|---|---|
+| 左栏 | 默认宽 280（范围 240–360），类别筛选、文字搜索、符号列表 |
+| 中栏 | 弹性宽度，欢迎内容或当前工程画布，工程名、视图操作及底部推导抽屉 |
+| 右栏 | 默认宽 420（范围 360–520），求解按钮，参数/实时指标/解题推导 Pivot；实时指标新增 MNA 2.0 结构化结果卡（节点电位、任意端口戴维南表）与交流频响/扫频卡 |
+| 状态区 | 操作状态、内部坐标和缩放等信息 |
 
-| 电路概念 | React Flow 概念 | 实现方式 |
-|----------|----------------|----------|
-| 元件实例 | 自定义节点 (Custom Node) | 每个元件类型一个 React 组件 |
-| 元件引脚 | 连接点 (Handle) | `<Handle type="source/target" position={...} />` |
-| 导线 | 边 (Edge) | 自定义 Edge 组件，支持正交路由 |
-| 节点 (电气连接点) | 自定义节点 | 小圆点节点，多个 Handle |
-| 元件参数 | 节点数据 (node.data) | 存储在 node.data.parameters 中 |
+构造时初始化符号库，编辑集合为空、HasActiveProject=false、结果为尚未分析。新建/打开后激活画布，不再生成旧固定共射预览。
 
-### 4.3 电路元件的自定义节点实现
+目前是单个活动工程状态；标签样式不能视为完整多文档/多工程并行编辑。当前版本新建/打开/关闭均清理相应选择、路径、历史和结果，并在丢弃修改前显示保存选择；窗口关闭也接入同一流程，详见[数据层报告](data-layer-technical-report.md)。
 
-```tsx
-// 自定义电阻节点
-const ResistorNode: React.FC<NodeProps> = ({ data, selected }) => {
-  return (
-    <div className={`circuit-node resistor ${selected ? 'selected' : ''}`}>
-      <Handle type="target" position={Position.Left} id="p" />
-      <div className="component-body">
-        <svg viewBox="0 0 60 20" className="resistor-symbol">
-          {/* 电阻符号：锯齿形 */}
-          <path d="M0,10 L10,10 L15,0 L25,20 L35,0 L45,20 L50,10 L60,10" 
-                stroke="currentColor" fill="none" strokeWidth="2" />
-        </svg>
-        <div className="component-label">{data.label}</div>
-        <div className="component-value">{data.parameters?.resistance?.value}Ω</div>
-      </div>
-      <Handle type="source" position={Position.Right} id="n" />
-    </div>
-  );
-};
+顶部“工程管理”菜单第二轮新增：
 
-// 注册节点类型
-const nodeTypes = {
-  resistor: ResistorNode,
-  capacitor: CapacitorNode,
-  inductor: InductorNode,
-  diode: DiodeNode,
-  bjt_npn: BJTNode,
-  mosfet: MOSFETNode,
-  voltage_source: VoltageSourceNode,
-  current_source: CurrentSourceNode,
-  ground: GroundNode,
-};
-```
+- “打开工程 / 导入 Web CircuitGraph... (Ctrl+O)”：选择 `.circuit/.json` 后先探测 Web/Python `CircuitGraph`，导入时自动布局并置为未保存原生工程；
+- “导出分步分析报告”子菜单：LaTeX + Circuitikz（`.tex`）、Word（`.docx`）、Markdown（`.md`）、HTML（`.html`，可浏览器打印为 PDF）。导出使用最近一次求解缓存，编辑电路或切换工程后缓存失效，需重新求解。
 
-### 4.4 编辑器的交互功能
+求解区在专用教学策略明确拒绝时自动回退到通用 MNA 2.0，并在结果摘要中注明回退原因；第六轮起二极管/MOSFET/多级教学电路**不**参与 MNA 回退，而是给出各自教学策略的明确失败或结果。“取消求解”现在会通过协作式取消令牌停止 MNA 扫频/求解循环（不保证强制终止任意同步运算）。
 
-| 功能 | 实现方式 | 优先级 |
-|------|----------|--------|
-| **拖拽放置元件** | 侧边栏 + React Flow 的 `onDrop` | P0 |
-| **连线** | 从 Handle 拖拽到另一个 Handle | P0 |
-| **删除元件/连线** | 选中 + Delete 键 / 右键菜单 | P0 |
-| **修改参数** | 双击节点弹出参数编辑面板 | P0 |
-| **移动元件** | 拖拽节点 | P0 |
-| **撤销/重做** | Zustand 中间件 + 命令模式 | P1 |
-| **缩放/平移** | React Flow 内置 | P0 |
-| **对齐到网格** | React Flow 的 `snapToGrid` | P0 |
-| **旋转元件** | 右键菜单 / 快捷键 R | P1 |
-| **导出为 SVG/PNG** | React Flow 的 `toSvg()` / `toPng()` | P1 |
+## 4. 元件库、参数与模板
 
----
+原生 `InitializeSymbols()` 当前初始化 **25 个条目**，包含普通/电解电容、VCC 端口、电源别名、NPN/PNP、N/P 增强与耗尽 MOS、N/P JFET、四类受控源等。这里的条目数不是求解器覆盖数，Web 元件定义仍是另一套 18 类。第三轮起，符号卡片与画布统一由 `Models/SymbolGeometry.cs` 的同一套矢量图元渲染：
 
-## 5. LaTeX 公式渲染方案论证
+| 符号组 | 标准处理 |
+|---|---|
+| BJT NPN/PNP | 外圆 + 基极竖条 + 集电极/发射极斜线；发射极箭头为**实心三角形**，NPN 向外、PNP 向内（可区分） |
+| JFET N/P | IEC 60617 风格：竖直沟道 + 栅极线 + 实心箭头（N 指向沟道、P 背离），漏/源引线从沟道上下端垂直引出，不再带外圆 |
+| MOSFET 四类 | 栅极板与沟道分离；增强型沟道 3 段、耗尽型 1 段实线；衬底/源箭头 N 指向沟道、P 背离；不再带外圆 |
+| VCC 端口 | Multisim 风格电源横杠 + 引线，无向上箭头/三角；文字标签由画布/卡片单独绘制 |
+| GND / 二极管 / 电源 / 受控源 / 无源件 / 变压器 | GND 为 IEC 三横线；二极管三角+阴极竖线；电源圆+极性/方向；受控源菱形+控制端标记；R/C/L/变压器统一线宽并保持 IEC/ANSI 风格 |
 
-### 5.1 渲染引擎选型
+元件参数检查器不再使用通用“元件数值”标签，而是按类型显示参数含义（`ParameterLabel`）：电阻 R、电容 C、电感 L、BJT β、增强型 MOS 阈值电压 Vth、耗尽型 MOS/JFET 夹断电压 VGS(off)、二极管正向压降 VF、受控源 μ/gm/rm/β 等；下方 `ParameterDescription` 解释物理意义（例如“Vth 是阈值电压，不是漏源电压或击穿电压”）。二极管与 BJT 另有“半导体材料”下拉框（硅管≈0.7 V / 锗管≈0.3 V），数据随工程保存（格式 1.2.0）。
 
-| 引擎 | 渲染速度 | LaTeX 覆盖度 | 包体积 | 服务端渲染 | 无障碍支持 |
-|------|----------|-------------|--------|-----------|-----------|
-| **KaTeX** | ⚡ 极快 (~10ms) | ~90% 常用命令 | ~300KB | ✅ 支持 | ⚠️ 基础 |
-| **MathJax 3** | 🐢 较慢 (~100ms) | ~99% 完整 | ~1MB+ | ✅ 支持 | ✅ 完整 |
-| **原生 LaTeX 编译** | 🐢 慢 (~1s) | 100% | N/A | N/A | N/A |
+搜索匹配名称、字幕、ID 和描述，类别为字符串过滤。点击添加或拖放添加时创建 CircuitElement 并初始化默认引脚，首次添加可先创建空白工程。卡片由 `CircuitSymbolPreview` 用同一矢量几何渲染，画布由 Win2D 用同一几何绘制；二者不再各自维护一套手绘符号。
 
-**选择 KaTeX 的理由**：
+检查器绑定所选元件的数值、单位、坐标与方向；清单也可编辑属性。模板宏仍按固定元件 ID 同步部分参数。类别清单已补入“半导体管”，二极管可直接按类筛选。交流源新增 FrequencyHz 输入，不再借用幅值字段。
 
-1. **渲染速度**: KaTeX 的渲染速度比 MathJax 快 10 倍以上，适合页面中大量公式的场景
-2. **包体积**: ~300KB 的包体积远小于 MathJax 的 1MB+
-3. **电路公式覆盖**: 电路分析中常用的 LaTeX 命令（分数、上下标、希腊字母、矩阵、积分）KaTeX 都支持
-4. **服务端渲染**: 支持 SSR，可用于报告导出的预渲染
+`CircuitTemplateFactory` 实际提供：
 
-### 5.2 KaTeX 在本项目中的应用
+| 入口 | 模板 |
+|---|---|
+| `CreateBlankTemplate` | 空白 |
+| `CreateCommonEmitterTemplate` | 分压偏置共射 |
+| `CreateRcTransientTemplate` | 一阶 RC 暂态 |
+| `CreateRcCoupledTemplate` | 阻容耦合放大 |
+| `CreateCommonBaseTemplate` | 共基极 |
 
-```tsx
-import katex from 'katex';
-import 'katex/dist/katex.min.css';
+`.sch` 模板名是工程显示文件名；工厂直接生成元件和导线，不读取磁盘 `.sch`。共射轨道 Y=80/480 属于该模板，不代表所有布局均符合相同几何约束或已通过标准认证。
 
-// 基础渲染组件
-const LatexFormula: React.FC<{ latex: string; displayMode?: boolean }> = ({ 
-  latex, 
-  displayMode = false 
-}) => {
-  const html = katex.renderToString(latex, {
-    throwOnError: false,
-    displayMode,
-    trust: true,
-    macros: {
-      '\\SI': '\\text{#1}\\,\\text{#2}',  // siunitx 兼容
-      '\\ohm': '\\Omega',
-      '\\kilo': '\\text{k}',
-      '\\mega': '\\text{M}',
-      '\\micro': '\\mu',
-      '\\nano': '\\text{n}',
-      '\\pico': '\\text{p}',
-    },
-  });
-  
-  return <span dangerouslySetInnerHTML={{ __html: html }} />;
-};
+## 5. 画布坐标与渲染
 
-// 使用示例
-<LatexFormula latex="A_v = -g_m \cdot R_C = -\frac{I_C}{V_T} \cdot R_C" displayMode />
-```
-
-### 5.3 电路分析中的 LaTeX 模板
-
-| 内容 | LaTeX 模板 | 渲染效果 |
-|------|-----------|----------|
-| 电压增益 | `A_v = -g_m \cdot R_C` | Av = -gm · RC |
-| 输入电阻 | `R_{in} = R_B \| r_\pi` | Rin = RB ∥ rπ |
-| 基极电流 | `I_B = \frac{V_{CC} - V_{BE}}{R_B}` | IB = (VCC - VBE) / RB |
-| KVL 方程 | `V_{CC} = I_C R_C + V_{CE}` | VCC = IC·RC + VCE |
-| 传递函数 | `H(s) = \frac{1}{1 + sRC}` | H(s) = 1/(1 + sRC) |
-| 单位标注 | `10\,\text{k}\Omega` | 10 kΩ |
-
----
-
-## 6. 分析结果展示方案论证
-
-### 6.1 展示面板的结构
+Win2D 在 `Canvas_Draw` 读取集合绘制网格、导线、交点、器件及选中/悬停状态。器件符号来自 `SymbolGeometryLibrary.Build(type)` 的统一图元（线段/实心多边形/圆），画布只负责旋转、颜色、线宽与引脚圆点；半导体参数标签使用 `FormattedParameterDisplay`（β/Vth/VGS(off)/VF），不再只显示裸数值。世界到屏幕采用：
 
 ```text
-┌─────────────────────────────────────────────────────────────┐
-│  分析结果展示面板                                             │
-├─────────────────────────────────────────────────────────────┤
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ 题型标签: BJT 共射静态工作点                           │   │
-│  │ 知识点: [BJT] [共射放大] [直流偏置] [工作点]           │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ ① 直流等效电路图                                     │   │
-│  │    [SVG 电路图渲染]                                   │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ ② 分步骤解题过程                                     │   │
-│  │    步骤 1: 绘制直流等效电路                           │   │
-│  │      依据: 电容开路、电感短路、AC 源置零              │   │
-│  │      公式: [渲染后的 LaTeX]                           │   │
-│  │    步骤 2: 假设 BJT 工作在放大区                      │   │
-│  │      依据: 硅管导通电压约 0.7V                        │   │
-│  │      公式: V_BE ≈ 0.7V                               │   │
-│  │    ...                                                │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ ③ 关键方程                                           │   │
-│  │    I_B = (V_CC - V_BE) / R_B = 0.113 mA             │   │
-│  │    I_C = β·I_B = 11.3 mA                            │   │
-│  │    V_CE = V_CC - I_C·R_C = 5.7V                     │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ ④ 求解结果                                           │   │
-│  │    I_B = 0.113 mA                                    │   │
-│  │    I_C = 11.3 mA                                     │   │
-│  │    V_CE = 5.7V                                       │   │
-│  │    工作区: 放大区 ✓                                   │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ ⑤ 警告信息 (如有)                                    │   │
-│  │    ⚠ 符号求解超时，已降级为数值求解                   │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ [导出 PDF] [导出 Word] [导出 LaTeX] [复制公式]        │   │
-│  └─────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
+screen = world × scale + translation
+world  = (screen - translation) / scale
+Matrix = CreateScale(scale) × CreateTranslation(translation)
 ```
 
-### 6.2 步骤展示的交互设计
-
-| 交互 | 实现方式 | 说明 |
-|------|----------|------|
-| **展开/折叠** | React 状态 + CSS transition | 每个步骤可独立展开/折叠 |
-| **当前步骤高亮** | 边框 + 背景色 | 正在讲解的步骤高亮显示 |
-| **公式悬浮解释** | Tooltip | 鼠标悬浮在公式上显示变量含义 |
-| **步骤跳转** | 点击步骤编号 | 快速跳转到指定步骤 |
-| **进度条** | 顶部进度条 | 显示当前步骤/总步骤数 |
-
-### 6.3 等效电路图的渲染
-
-等效电路图从 `AnalysisResult.dcEquivalent` 或 `AnalysisResult.acEquivalent` 中的 `CircuitGraph` 渲染：
-
-```tsx
-const EquivalentCircuitView: React.FC<{ circuit: CircuitGraph }> = ({ circuit }) => {
-  // 将 CircuitGraph 转换为 React Flow 的 nodes 和 edges
-  const { nodes, edges } = useMemo(() => 
-    circuitGraphToReactFlow(circuit), [circuit]
-  );
-  
-  return (
-    <ReactFlow
-      nodes={nodes}
-      edges={edges}
-      nodeTypes={nodeTypes}
-      fitView
-      nodesDraggable={false}  // 等效电路图只读
-      nodesConnectable={false}
-      elementsSelectable={true}
-    />
-  );
-};
-```
-
----
-
-## 7. 局域网手机上传方案论证
-
-### 7.1 技术方案
-
-采用 **QR 码 + REST API + Server-Sent Events (SSE)** 的混合方案：
-
-```text
-┌──────────────┐                    ┌──────────────┐
-│  电脑浏览器   │                    │  手机浏览器   │
-│              │                    │              │
-│ 1. 创建会话   │                    │              │
-│ 2. 显示 QR   │ ──── 扫码 ────→   │ 3. 打开页面   │
-│              │                    │ 4. 拍照上传   │
-│ 7. 接收通知   │ ←── SSE 推送 ─── │ 5. POST 上传  │
-│ 8. 显示图片   │                    │              │
-└──────────────┘                    └──────────────┘
-       │                                    │
-       ▼                                    ▼
-┌──────────────────────────────────────────────────┐
-│              本地 API 服务 (Express)               │
-│  - POST /api/session/create  → 创建会话           │
-│  - GET  /api/session/:id     → 查询会话状态       │
-│  - POST /api/session/:id/upload → 上传图片        │
-│  - GET  /api/session/:id/events → SSE 事件流      │
-└──────────────────────────────────────────────────┘
-```
-
-### 7.2 会话管理
-
-```typescript
-// 会话数据结构
-interface Session {
-  id: string;           // UUID
-  token: string;        // 加密随机 token
-  status: 'pending' | 'linked' | 'completed';
-  createdAt: number;    // 创建时间戳
-  expiresAt: number;    // 过期时间戳 (5 分钟)
-  images: UploadedImage[];
-}
-
-interface UploadedImage {
-  id: string;
-  filename: string;
-  path: string;
-  uploadedAt: number;
-}
-```
-
-### 7.3 QR 码生成
-
-```tsx
-import { QRCodeSVG } from 'qrcode.react';
-
-const SessionQRCode: React.FC<{ session: Session }> = ({ session }) => {
-  const localIP = useLocalIP();  // 自动检测局域网 IP
-  const url = `http://${localIP}:3000/capture/${session.id}?token=${session.token}`;
-  
-  return (
-    <div className="qr-container">
-      <QRCodeSVG 
-        value={url} 
-        size={256} 
-        level="M"  // 中等纠错级别
-        includeMargin
-      />
-      <p className="qr-hint">使用手机扫描二维码上传电路图</p>
-      <p className="qr-url">{url}</p>
-      <p className="qr-expire">
-        有效期: {Math.max(0, Math.floor((session.expiresAt - Date.now()) / 1000))}秒
-      </p>
-    </div>
-  );
-};
-```
-
-### 7.4 手机端上传页面
-
-```tsx
-// /capture/:sessionId 页面
-const CapturePage: React.FC = () => {
-  const { sessionId } = useParams();
-  const [token] = useState(() => new URLSearchParams(location.search).get('token'));
-  const [uploading, setUploading] = useState(false);
-  
-  const handleCapture = async (file: File) => {
-    setUploading(true);
-    const formData = new FormData();
-    formData.append('image', file);
-    
-    const response = await fetch(`/api/session/${sessionId}/upload`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` },
-      body: formData,
-    });
-    
-    if (response.ok) {
-      alert('上传成功！请在电脑端查看。');
-    }
-    setUploading(false);
-  };
-  
-  return (
-    <div className="capture-page">
-      <h1>拍摄电路图</h1>
-      
-      {/* 方式 1: 直接拍照 */}
-      <input 
-        type="file" 
-        accept="image/*" 
-        capture="environment"  // 使用后置摄像头
-        onChange={(e) => e.target.files?.[0] && handleCapture(e.target.files[0])}
-      />
-      
-      {/* 方式 2: 从相册选择 */}
-      <input 
-        type="file" 
-        accept="image/*"
-        onChange={(e) => e.target.files?.[0] && handleCapture(e.target.files[0])}
-      />
-      
-      {uploading && <div className="uploading">上传中...</div>}
-    </div>
-  );
-};
-```
-
-### 7.5 电脑端实时感知
-
-```tsx
-// 电脑端通过 SSE 监听会话事件
-const useSessionEvents = (sessionId: string) => {
-  const [status, setStatus] = useState<string>('pending');
-  const [images, setImages] = useState<UploadedImage[]>([]);
-  
-  useEffect(() => {
-    const eventSource = new EventSource(`/api/session/${sessionId}/events`);
-    
-    eventSource.addEventListener('linked', (e) => {
-      setStatus('linked');
-    });
-    
-    eventSource.addEventListener('upload_complete', (e) => {
-      const image = JSON.parse(e.data);
-      setImages(prev => [...prev, image]);
-    });
-    
-    eventSource.addEventListener('completed', (e) => {
-      setStatus('completed');
-      eventSource.close();
-    });
-    
-    return () => eventSource.close();
-  }, [sessionId]);
-  
-  return { status, images };
-};
-```
-
----
-
-## 8. 报告导出方案论证
-
-### 8.1 导出格式对比
-
-| 格式 | 实现方式 | 优势 | 劣势 |
-|------|----------|------|------|
-| **PDF** | 浏览器打印 (window.print) + CSS @media print | 零依赖、所见即所得 | 样式控制有限 |
-| **Word (.docx)** | `docx` npm 包 | 可编辑、符合学术提交要求 | 公式渲染复杂 |
-| **LaTeX (.tex)** | 模板字符串拼接 | 可编译为高质量 PDF | 需要 LaTeX 环境 |
-| **HTML** | React 组件直接渲染 | 零额外工作 | 不是标准文档格式 |
-
-### 8.2 PDF 导出
-
-```tsx
-const exportToPDF = () => {
-  // 使用浏览器打印功能
-  const printWindow = window.open('', '_blank');
-  printWindow.document.write(`
-    <html>
-      <head>
-        <link rel="stylesheet" href="/katex/katex.min.css">
-        <style>
-          body { font-family: 'SimSun', serif; }
-          .equation { margin: 10px 0; }
-          @media print { .no-print { display: none; } }
-        </style>
-      </head>
-      <body>
-        <h1>电路分析报告</h1>
-        ${renderAnalysisHTML(analysisResult)}
-      </body>
-    </html>
-  `);
-  printWindow.document.close();
-  printWindow.print();
-};
-```
-
-### 8.3 LaTeX 导出
-
-```typescript
-const exportToLaTeX = (result: AnalysisResult): string => {
-  return `\\documentclass[12pt]{article}
-\\usepackage{circuitikz}
-\\usepackage{amsmath}
-\\usepackage{siunitx}
-\\usepackage{geometry}
-\\geometry{a4paper, margin=1in}
-
-\\title{电路分析报告}
-\\date{\\today}
-
-\\begin{document}
-\\maketitle
-
-\\section{题目}
-${result.problemText}
-
-\\section{直流等效电路}
-\\begin{center}
-\\begin{circuitikz}[american]
-${generateCircuitikzCode(result.dcEquivalent)}
-\\end{circuitikz}
-\\end{center}
-
-\\section{分析步骤}
-${result.steps.map((step, i) => `
-\\subsection{步骤 ${i + 1}: ${step.description}}
-${step.reasoning}
-\\begin{equation}
-${step.formula}
-\\end{equation}
-`).join('\n')}
-
-\\section{关键方程}
-${result.equations.map(eq => `
-\\begin{equation}
-${eq.latex}
-\\end{equation}
-`).join('\n')}
-
-\\end{document}`;
-};
-```
-
-### 8.4 Circuitikz 代码生成
-
-```typescript
-const generateCircuitikzCode = (circuit: CircuitGraph): string => {
-  const lines: string[] = [];
-  
-  // 为每个元件生成 Circuitikz 代码
-  circuit.components.forEach((comp, index) => {
-    const [x, y] = getNodePosition(comp, circuit);
-    const angle = getComponentAngle(comp);
-    
-    switch (comp.definitionId) {
-      case 'passive.resistor':
-        lines.push(`\\draw (${x},${y}) to[R, l=$${comp.label}$] (${x+2},${y});`);
-        break;
-      case 'passive.capacitor':
-        lines.push(`\\draw (${x},${y}) to[C, l=$${comp.label}$] (${x+2},${y});`);
-        break;
-      case 'source.v_dc':
-        lines.push(`\\draw (${x},${y}) to[V, l=$${comp.label}$] (${x},${y+2});`);
-        break;
-      case 'bjt.npn':
-        lines.push(`\\draw (${x},${y}) node[npn] (q1) {};`);
-        break;
-      // ... 其他元件类型
-    }
-  });
-  
-  // 生成连线
-  circuit.connections.forEach(conn => {
-    const from = getPortPosition(conn, circuit);
-    const to = getPortPosition(conn, circuit);
-    lines.push(`\\draw (${from.x},${from.y}) -- (${to.x},${to.y});`);
-  });
-  
-  return lines.join('\n');
-};
-```
-
----
-
-## 9. 文献综述与相关研究
-
-### 9.1 Web 电路编辑器的现有项目
-
-| 项目 | 类型 | 技术栈 | 开源 | 本项目借鉴 |
-|------|------|--------|------|-----------|
-| **CircuitJS1** | 仿真器 | Java→JS (GWT) + Canvas | GPL | 仿真引擎架构 |
-| **EasyEDA** | 完整 EDA | 云端 + Canvas | 部分开源 | 编辑器 UX |
-| **CircuitLab** | 仿真器 | 云端 | 商业 | 简洁的交互设计 |
-| **draw.io** | 通用绘图 | mxGraph | Apache 2.0 | 电气符号库 |
-| **Tinkercad Circuits** | 教学仿真 | 云端 | 商业 | 教学友好的 UX |
-
-### 9.2 LaTeX 渲染引擎的学术对比
-
-| 引擎 | 开发者 | 年份 | 渲染方式 | 引擎 |
-|------|--------|------|----------|------|
-| **KaTeX** | Khan Academy | 2014– | HTML + CSS | 自研解析器 |
-| **MathJax** | AMS | 2010– | HTML/CSS/SVG | 自研解析器 |
-| **TikZJax** | 社区 | 2020– | WebAssembly TeX | TeX 引擎编译 |
-
-### 9.3 局域网设备配对的研究
-
-| 方案 | 代表 | 安全性 | 复杂度 |
-|------|------|--------|--------|
-| **QR 码 + URL Token** | Excalidraw, Etherpad | 中 | 低 |
-| **QR 码 + 6 位配对码** | PairDrop | 中高 | 中 |
-| **QR 码 + 密钥交换** | WhatsApp Web | 高 | 高 |
-| **mDNS 自动发现** | Snapdrop | 中 | 中 |
-
-### 9.4 实时同步技术的对比
-
-| 技术 | 延迟 | 离线支持 | 冲突解决 | 复杂度 |
-|------|------|----------|----------|--------|
-| **REST 轮询** | 高 (~2s) | ❌ | ❌ | 低 |
-| **SSE** | 低 (~100ms) | ❌ | ❌ | 低 |
-| **WebSocket** | 低 (~50ms) | ❌ | ❌ | 中 |
-| **Socket.IO** | 低 (~50ms) | ⚠️ 自动重连 | ❌ | 中 |
-| **Yjs (CRDT)** | 低 (~50ms) | ✅ | ✅ | 高 |
-
----
-
-## 10. 风险分析与应对策略
-
-| 编号 | 风险 | 概率 | 影响 | 应对策略 |
-|------|------|------|------|----------|
-| R1 | React Flow 的连线路由不适合电路图 | 中 | 中 | 自定义正交路由组件；必要时回退到 JointJS |
-| R2 | KaTeX 不支持某些 LaTeX 命令 | 低 | 低 | 使用 KaTeX 的 `macros` 扩展；不支持的命令降级为纯文本 |
-| R3 | 手机浏览器 getUserMedia 兼容性 | 低 | 中 | 提供 `<input type="file">` 降级方案 |
-| R4 | 局域网 IP 检测失败 | 低 | 低 | 提供手动输入 URL 的降级方案 |
-| R5 | 大电路图编辑器性能问题 | 低 | 中 | 使用 React Flow 的虚拟化渲染；限制第一阶段电路规模 |
-| R6 | PDF 导出样式不一致 | 中 | 低 | 使用 CSS @media print 精确控制打印样式 |
-
----
-
-## 11. 结论
-
-1. **React + TypeScript 是展示层的最优前端框架**: 与数据层的 Zod Schema 天然集成，组件化架构适合电路图的模块化渲染。
-
-2. **React Flow 是电路图编辑器的最优基础库**: React 原生、MIT 开源、自定义节点完全可控，适合第一阶段的轻量级拓扑修正需求。
-
-3. **KaTeX 是 LaTeX 渲染的最优引擎**: 渲染速度比 MathJax 快 10 倍，覆盖电路分析所需的全部 LaTeX 命令，包体积仅 ~300KB。
-
-4. **QR 码 + SSE 是局域网手机上传的最优方案**: 实现简单（无需额外依赖）、延迟低（~100ms）、安全性足够（URL Token + TTL 过期）。
-
-5. **结构化结果 + 模板渲染的分离架构实现了分析与展示的解耦**: 分析引擎只输出 `AnalysisResult` JSON，展示层通过 React 组件和 LaTeX 模板独立渲染，两者可独立演进。
-
----
-
-## 12. 参考文献
-
-[1] xyflow Team. (2021–present). *React Flow: A library for building node-based editors*. https://reactflow.dev
-
-[2] Khan Academy. (2014–present). *KaTeX: The fastest math typesetting library for the web*. https://katex.org
-
-[3] Paul Falstad. (2009–present). *CircuitJS1: Electronic Circuit Simulator*. https://github.com/pfalstad/circuitjs1
-
-[4] JointJS. (2011–present). *JointJS: JavaScript diagramming library*. https://www.jointjs.com
-
-[5] Excalidraw Team. (2020–present). *Excalidraw: Virtual whiteboard for sketching hand-drawn diagrams*. https://github.com/excalidraw/excalidraw
-
-[6] PairDrop Team. (2022–present). *PairDrop: Local file sharing*. https://github.com/schlagmichdoch/PairDrop
-
-[7] Yjs Team. (2015–present). *Yjs: A CRDT framework for building collaborative software*. https://github.com/yjs/yjs
-
-[8] Socket.IO Team. (2010–present). *Socket.IO: Bidirectional and low-latency communication*. https://socket.io
-
-[9] draw.io Team. (2012–present). *draw.io: Diagramming application*. https://github.com/jgraph/drawio
-
-[10] Stefan Lindner & Romano Giannetti. (2018–present). *Circuitikz: LaTeX package for drawing circuits*. https://github.com/circuitikz/circuitikz
-
-[11] MathJax Team. (2010–present). *MathJax: Beautiful and accessible math in all browsers*. https://www.mathjax.org
-
-[12] React DnD. (2014–present). *React DnD: Drag and drop for React*. https://react-dnd.github.io/react-dnd/
-
-[13] Zustand Team. (2019–present). *Zustand: Bear necessities for state management in React*. https://github.com/pmndrs/zustand
-
----
-
-> **文档版本**: v1.0
-> **最后更新**: 2026 年 6 月 12 日
+初始缩放 1，平移 `(100,40)`；缩放钳在 0.4–3.0，滚轮正向乘 1.15、反向乘 0.85，围绕指针或视口中心调整平移。不是无级动画引擎。
+
+元件、线段拖动使用 10 单位吸附。状态栏已改为内部坐标，不再标记 mil；仍没有 PCB 物理单位转换。
+
+元件绘制与引脚世界坐标依据旋转角变换；命中使用反向旋转局部矩形。导线使用 `GetPathPoints()` 的正交路径和显式引用，并非旧版 `DrawCircuitWires()` 根据模板临时拼出全部线条。
+
+## 6. 交互与快捷键
+
+| 操作 | 当前实现 |
+|---|---|
+| 放置元件 | 点击/拖入左侧符号，创建默认引脚 |
+| 选择与多选 | 元件/导线命中、框选，Ctrl/Shift 组合选择路径 |
+| 元件拖拽 | 内部坐标移动并同步关联导线 |
+| 旋转 | Space/R，每次 90° |
+| 删除 | Delete/Backspace，移除元件及直接关联导线；分支悬空仍需验证 |
+| 布线 | W 切换；引脚间连接、WireTap 分支；可通过选中导线操作引出分支 |
+| 线段调整 | 按起始路径拖动线段、更新 Waypoints/正交路径 |
+| 平移 | 右键或中键拖拽 |
+| 缩放 | 滚轮或工具按钮；重置回初始视口 |
+| 撤销/重做 | Ctrl+Z/Y；元素/导线克隆快照，上限 50 |
+| 求解 | Ctrl+R |
+| 文件 | Ctrl+O、Ctrl+S、Ctrl+Shift+S |
+
+数值输入获得焦点时记录快照，撤销/重做后从元件同步模板宏；删除父导线会递归移除分支。撤销仍不记录全部 UI/非 UI 字段事务，不能承诺所有程序化修改可撤销。页面和控件均有部分快捷键处理；真实焦点和路由行为列入人工验收。
+
+## 7. 母线、WireTap 与焊点
+
+母线是 `Wires` 中的普通声明式导线，支线通过 `WireTap` 父导线 ID 建立引用；引脚引出的线、母线和子支线分别更新。画布与 ViewModel 中各自存在导线同步代码，修改一处并不能保证所有交互路径一致。
+
+几何更新支持沿母线垂直投影和有限轮次的子线跟随；没有任意障碍物下的 A* 自动布线。嵌套分支与父线删除后的处理仍需扩展验收。
+
+焊点以 `FillCircle(dot, 1.9f, ...)` 绘制，即直径 3.8 单位，且在引脚 5 单位净空内排除。应根据显式连接和分支判定解释电气交点，不能把所有线段的视觉相交视为短接。当前布局和颜色可随主题调整，尚无本版本的截图/高 DPI 视觉回归证据。
+
+## 8. 求解结果与公式展示
+
+右栏展示 `AnalysisResult.QPoint/AcParameters/Steps/StepGroups/RawMnaLog`；推导步骤含标题、方法、解释、符号式、代入式和结果。底部抽屉可重复展示步骤。非晶体管策略（RC/RL/RLC/MNA）将 Q 点设为破折号/说明；二极管策略 Q 点标记“二极管非线性电路”且 AcParameters 为 null，MOSFET 策略映射 `Ibq="—"、Icq=ID、Vceq=VDS`，共集电极正常填 QPoint/AcParameters。
+
+**教材估算法显示（第七轮）**：BJT/MOSFET 的 Q 点、AC 指标、摘要与步骤数字都按教材手算链生成，每个中间结果按显示单位最多两位小数（AwayFromZero）舍入并回代下一步；公式不化简（`(1+β)` 等保留）。因此 Q 点面板显示的是教材估算值（如题3-12 为 `0.53 μA / 53 μA / 11.82 V`），**不再并列显示“戴维南精确/教材估算”两种口径**。后端戴维南精确值只写入 `QPointInfo.ExactIbq/ExactIcq/ExactVceq` 与第 1 步 `Values`，XAML **不绑定**这些字段；若教材估算法把工作点算进饱和区（软分压器），求解明确失败并提示“饱和区”，不显示伪结果或后端精确值。全部教学题型与报告显示值最多两位小数。指标卡仍复用放大电路字段，名称与语义未完全泛化。
+
+**信号源内阻 Rs/源电压增益 Aus 指标（第八轮）**：实时指标卡的 AC 参数区在 `AcParameters.HasSourceResistance=true` 时追加“信号源内阻 Rs:”与“源电压增益 Aus:”两行（默认隐藏；无 Rs 时 `SourceResistance`/`SourceVoltageGain` 保持“—”、`HasSourceResistance=false`），仅识别到 Rs 的 BJT（共射四类偏置/共基/共集）显示；识别不到 Rs 的拓扑界面与第七轮一致。AC 指标卡 Grid 为 **8 行** `RowDefinition`（Row 0–5 原 Av/Ri/Ro/fL/fH/BW，Row 6 Rs、Row 7 Aus）——**窗口验收首拍曾发现旧 7 行定义导致 Rs/Aus 两行叠字（bug 现场截图 `13_b07_ac_metrics_region.png`），补足 8 行后重拍 `11b/12b/13b/14b` 正常**。报告导出 `Services/ReportExportService.cs` 的 AC 参数表同步追加“信号源内阻 Rs”“源电压增益 Aus（含 Rs）”两行，四种格式共享同一报告模型。**MOSFET 放大器暂无 Rs/Aus 行**（第八轮范围仅 BJT）。**窗口截图验收**：最终构建（18:30:46）在真实窗口（Win32 `PrintWindow`，150% DPI）确认 B07 变体实时指标显示 Rs/Aus 两行且无叠字，普通模板（`14b_normal_metrics_fixed.png`）不显示两行；证据目录 `tools/ui-verify/evidence/round8/`。
+
+**BJT 小信号参数编辑（第九轮）**：两处编辑入口（均绑定 `ViewModel.SelectedElement.BjtRbb`/`BjtRbe` 或宏参数 `RbbNumber`/`RbeNumber`）：
+
+1. **右侧“元件参数检查器”卡**（选中 BJT、`SupportsBjtSmallSignalParameters` 为 true 时显示）：“基区体电阻 rbb′:”与“给定 rbe/hie:”两个 `NumberBox`（Ω），`Minimum=0`，旁注“Ω (0=自动)”/“Ω (0=计算)”，并显示说明“r_bb′ 自动：共射/共集 200 Ω、共基 50 Ω；给定 rbe(hie) 后直接采用，不再按 Q 点公式计算。”
+2. **“参数设置”标签页 Group 3“三极管模型与信号源特性”**：在 β 行下新增同样的 rbb′/rbe(hie) 两行宏参数编辑框（0=自动/0=计算）与说明。
+
+- 宏参数 `RbbNumber`/`RbeNumber` 变更时同步到项目内所有 BJT 元件；模板创建/打开工程时从第一个 BJT 元件刷新宏；选中 BJT 的元件参数变化会回写宏，两处显示保持一致。
+- UI 编辑 NaN/负数自动归零（0=自动）；后端非法数据才触发明确失败（见引擎报告 6.1.2）。
+- **验证范围**：第九轮按用户要求**不做 ui-capture 窗口验收**，只完成控制台回归 + 构建；两处编辑框在真实窗口中的外观、焦点与键鼠交互**未验收**，第七/八轮的窗口截图证据不覆盖本轮新增编辑器。
+
+第二轮新增“实时指标”页中的结构化卡：
+
+- **通用线性网络结构化结果（MNA 2.0）**：模型摘要、节点直流电位列表、任意端口戴维南/诺顿等效表（含 Req 与 Voc 显示），仅当 `AnalysisResult.LinearNetwork` 非空时显示；
+- **交流相量与频率响应扫描**：输入/输出端口标签、工作频率增益/幅值、增益 dB、相位、上下限截止与带宽，以及 61 个扫频点（频率/增益 dB/相位）滚动列表与边界说明。
+
+这些卡片使用 `Models/LinearAnalysisModels.cs` 的结构化字段，不是从步骤文本解析。原生结果仍没有完整 DC/AC 等效 `CircuitGraph` 图元、节点电压热图或可交互频率扫描曲线，界面也未自动绘制等效电路图；等效图目前只出现在 LaTeX 报告自动生成的 circuitikz 原理图中。
+
+**`MathFormulaView` 的当前实现（第七轮重写）**：
+
+1. 把 LaTeX 字符串交给纯 C# `Math/MathLatexParser` 解析为 `MathNode` 语法树（支持 `\frac`、`\sqrt`（含 `\sqrt[n]`）、上下标、`\text/\mathrm/\mathbf/\mathit`、希腊字母、关系/二元运算符、`\left/\right`、间距、`\\` 换行、matrix/cases/array/aligned 与 `\hline`）；解析器永不抛异常，非法输入降级为可识别文本。
+2. `Math/MathLayoutEngine` 按当前宽度做二维布局：真上下角标（0.72× 字号 + 基线偏移）、上下叠放分式、根号、矩阵/cases/array 网格、贪心自动换行（在运算符/标点处断行）；单一不可拆分原子超宽时整体等比缩小，不横向裁切。
+3. `CanvasControl` 用 DirectWrite 自绘文本片元与线条/定界符几何；基础字号 `BaseFontSize=16f`（旧 13.5px 文本已废弃），控件高度随内容自适应，按可用宽度重新布局；数学字体候选 Cambria Math 等，CJK 回退 Microsoft YaHei UI 等，颜色跟随主题强调前景。
+4. 右上角“LaTeX”按钮把原始公式放入系统剪贴板（保留）。
+
+因此现在是**真正的二维公式排版**（不是 Unicode 转写/斜线分数/文本括号）；但仍有明确限制：array 列格式竖线不画、Canvas 自绘文本不可选择/复制局部文本、`\overline/\vec/\tilde` 等只保留内容不画装饰（`\hat/\dot/\ddot` 有装饰）、未知命令降级显示；不嵌入 KaTeX/MathML，也不是完整 TeX 排版引擎。`tests/MathFormulaChecks` 用确定性测量器验证解析/布局几何；2026-10-18 第七轮已用 Win32 `PrintWindow` 截图在真实窗口（150% DPI、1920×1118 物理像素）核对共射模板、题3-12 PNP 与 MOS 共源模板的公式排版/DC-AC 分组/两位小数（见[第七轮修订记录](technical-code-fixes-20261018-round7.md) 3.5），但逐像素自动比对、主题/其它高 DPI 与窗口尺寸组合仍未验收。
+
+## 9. 文件、导出与手机上传
+
+| 能力 | WinUI 主软件 | 保留的 Web 原型 |
+|---|---|---|
+| 保存/打开 | CircuitProjectData JSON，`.circuit/.json` | CircuitGraph JSON，另一套格式 |
+| Web 格式导入 | `WebCircuitGraphImporter`：`.circuit/.json` 中探测 Web/Python CircuitGraph，自动布局并转换为原生工程（单向） | 自身格式 |
+| SPICE 导出 | 工程菜单、文件选择器、有限器件文本 | 不作为原生功能来源 |
+| 复制公式 | 可复制单条原始 LaTeX | KaTeX 展示/原型复制 |
+| Markdown 报告 | 已提供（`*.md`） | 原型另有 JSON/HTML 导出 |
+| LaTeX/Circuitikz 文件 | 已提供（`*.tex`，ctexart+circuitikz 自动原理图）；本机无 TeX，未真实编译 | ExportStudioModal 与生成/下载函数已实现；未编译验证 |
+| Word 报告 | 已提供（`*.docx`，手写最小 OOXML，可用 python-docx 解析；未在 Word 实机打开验收） | 无 |
+| HTML 报告 | 已提供（自包含，可浏览器打印为 PDF） | `exportAnalysisReport` 已实现 |
+| PDF | 仍不直接生成：HTML 打印或外部 xelatex 编译 `.tex` | 有浏览器打印说明，无专用 PDF 实现 |
+| QR/SSE 手机会话 | 未接入原生工作台 | MobileCaptureModal 已有二维码、倒计时、SSE 与图片接收代码 |
+
+Web 原型的这些功能不应继续写成全部未实现，也不能移植成 WinUI 已支持的能力。FastAPI `/capture/{session_id}` 已在第二轮设置 HTMLResponse，并对嵌入 URL 的会话与 token 编码。二维码和接口代码存在不等于手机全流程已验收。
+
+报告导出的公开入口是 `ReportExportService`（纯内存、不写文件、无 WinUI 依赖），界面命令只负责选择保存位置与写盘；四种格式共享同一报告模型（报告信息、指标、原理图、推导步骤、结构化线性网络、SPICE）。AC 参数表在识别到信号源内阻 Rs 时包含“信号源内阻 Rs”“源电压增益 Aus（含 Rs）”两行（第八轮）。报告边界与实测结果见[第二轮修订记录](technical-code-fixes-20261017-round2.md)，第八轮 Rs/Aus 与保存命名变化见[第八轮修订记录](technical-code-fixes-20261018-round8.md)，第七轮显示口径与公式框变化见[第七轮修订记录](technical-code-fixes-20261018-round7.md)。
+
+视觉识别计划后续开发，当前尚未接入；没有“手机上传→自动识别拓扑→原生求解”的链路。
+
+## 10. 验证与维护要求
+
+用户随后授权程序与测试。第九轮已运行主项目构建（0 警告 0 错误，含默认 Debug 重新构建）；非线性引擎回归 **913/913**（原 822 + 91 条小信号参数检查）、`M2SolverChallenger` **160/160**（原 156 + 4 条 rbb/rbe 宏同步/默认/失效/保存读回）、29 个教学电路文件校验 **259/259**、公式排版 411/411、显示两位小数 55/55、四个生成器 `--verify` 7/7、6/6、10/10、6/6、30 题基准 **30/30（Accuracy=100.00%）**；既有常规 C# 回归（ChallengerRunner 131、M3 32、M3_4 9、EngineV2 306、报告 110、导入 172、符号 230）与独立数值审计 1359/1359 全部通过（见[第九轮修订记录](technical-code-fixes-20261018-round9.md)）。符号几何由 SymbolChecks 从几何层验证、公式由 `MathFormulaChecks` 用确定性测量器验证解析/布局几何；第七轮用 Win32 `PrintWindow` 截图在真实窗口（150% DPI）对共射模板、题3-12 PNP 与 MOS 共源模板的公式排版、DC/AC 分组、两行式卡片头与两位小数显示做了静态抽查（见[第七轮修订记录](technical-code-fixes-20261018-round7.md) 3.5）；**第八轮已用最终构建在真实窗口对 B07 变体 + 普通模板做静态截图验收，确认实时指标 Rs/Aus 两行显示正常（并据首拍发现的叠字 bug 补足 AC 卡 8 行 RowDefinition）、普通模板不显示两行**，证据目录 `tools/ui-verify/evidence/round8/`（含 bug 现场 `13_b07_ac_metrics_region.png` 与修复后 `11b/12b/13b/14b`）。**第九轮按用户要求不做 ui-capture 窗口验收**：r_bb'/r_be 两处编辑框的真实窗口外观/焦点/键鼠交互未验收，第七/八轮截图不覆盖本轮新增编辑器；窗口验收仍为静态截图级，像素级自动比对、深浅主题、其它 DPI 组合、自动化交互与选择器交互仍未验收；用户进程运行旧构建时看不到新功能。控制台结果不能代替窗口操作证据。
+
+扩展界面时应同步检查绘制与模型引脚、单选和框选路径、画布/ViewModel 两套跟随更新、状态通知/撤销/脏标志、工程序列化、`SolutionPhase`/`StepGroups` 映射、`AcParametersInfo` 的 Rs/Aus 字段绑定（`HasSourceResistance` 控制可见性）、BJT 小信号参数绑定（`BjtRbb`/`BjtRbe` 与 `RbbNumber`/`RbeNumber` 双向同步、0=自动）以及策略支持范围。新增结果卡时还应同步 `AnalysisResult` 映射与报告 renderer。详细待验收项见[测试计划](wzh-no-git-worktree-eng-review-test-plan-20260529-021023.md)，发现项与证据见[第二轮审查报告](technical-document-review-20261017-round2.md)。

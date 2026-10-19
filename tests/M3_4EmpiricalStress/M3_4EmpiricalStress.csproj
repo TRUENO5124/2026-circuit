@@ -16,9 +16,12 @@
     <Compile Include="..\..\apps\desktop-winui\Models\EngineeringUnit.cs" Link="Models\EngineeringUnit.cs" />
     <Compile Include="..\..\apps\desktop-winui\Models\AnalysisStep.cs" Link="Models\AnalysisStep.cs" />
     <Compile Include="..\..\apps\desktop-winui\Models\AnalysisResult.cs" Link="Models\AnalysisResult.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Models\LinearAnalysisModels.cs" Link="Models\LinearAnalysisModels.cs" />
     <Compile Include="..\..\apps\desktop-winui\Services\CircuitTemplateFactory.cs" Link="Services\CircuitTemplateFactory.cs" />
     <Compile Include="..\..\apps\desktop-winui\Services\ScientificNotationFormatter.cs" Link="Services\ScientificNotationFormatter.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Services\TeachingDisplay.cs" Link="Services\TeachingDisplay.cs" />
     <Compile Include="..\..\apps\desktop-winui\Engine\ElectricalNetlist.cs" Link="Engine\ElectricalNetlist.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Engine\Linear\LinearNetworkAnalyzer.cs" Link="Engine\Linear\LinearNetworkAnalyzer.cs" />
     <Compile Include="..\..\apps\desktop-winui\Engine\NetlistExtractor.cs" Link="Engine\NetlistExtractor.cs" />
     <Compile Include="..\..\apps\desktop-winui\Engine\PedagogicalSolution.cs" Link="Engine\PedagogicalSolution.cs" />
     <Compile Include="..\..\apps\desktop-winui\Engine\TopologyClassifier.cs" Link="Engine\TopologyClassifier.cs" />
@@ -26,5 +29,13 @@
     <Compile Include="..\..\apps\desktop-winui\Engine\Strategies\SecondOrderRlcStrategy.cs" Link="Engine\Strategies\SecondOrderRlcStrategy.cs" />
     <Compile Include="..\..\apps\desktop-winui\Engine\Strategies\BjtAmplifierStrategy.cs" Link="Engine\Strategies\BjtAmplifierStrategy.cs" />
     <Compile Include="..\..\apps\desktop-winui\Engine\Strategies\MnaLinearStrategy.cs" Link="Engine\Strategies\MnaLinearStrategy.cs" />
+    <!-- 非线性引擎（2026-10-18 契约 §2）：TopologyClassifier 已路由到二极管/MOS/多级教学策略，
+         因此把两个器件模型、多级预留接口与三个教学策略显式链接进本测试工程。 -->
+    <Compile Include="..\..\apps\desktop-winui\Engine\Nonlinear\DiodeModel.cs" Link="Engine\Nonlinear\DiodeModel.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Engine\Nonlinear\MosfetModel.cs" Link="Engine\Nonlinear\MosfetModel.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Engine\MultiStage\MultiStageContracts.cs" Link="Engine\MultiStage\MultiStageContracts.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Engine\Strategies\DiodeCircuitStrategy.cs" Link="Engine\Strategies\DiodeCircuitStrategy.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Engine\Strategies\MosfetAmplifierStrategy.cs" Link="Engine\Strategies\MosfetAmplifierStrategy.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Engine\Strategies\MultiStageAmplifierStrategy.cs" Link="Engine\Strategies\MultiStageAmplifierStrategy.cs" />
   </ItemGroup>
 </Project>

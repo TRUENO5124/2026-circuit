@@ -18,14 +18,15 @@ public static class ScientificNotationFormatter
 {
     /// <summary>
     /// Formats a double into standard LaTeX scientific notation (e.g. 6.28 \times 10^{3}, 2.00 \times 10^{-5}).
+    /// Default precision is two decimals: teaching results keep at most two decimal places.
     /// </summary>
-    public static string ToLatexScientific(double value, int precision = 3, bool fixedDecimals = false)
+    public static string ToLatexScientific(double value, int precision = 2, bool fixedDecimals = false)
     {
         if (double.IsNaN(value)) return @"\text{NaN}";
         if (double.IsPositiveInfinity(value)) return @"\infty";
         if (double.IsNegativeInfinity(value)) return @"-\infty";
 
-        if (Math.Abs(value) < 1e-15) return "0";
+        if (value == 0) return "0";
 
         double absVal = Math.Abs(value);
 
@@ -61,14 +62,15 @@ public static class ScientificNotationFormatter
 
     /// <summary>
     /// Formats a double into standard Unicode scientific notation (e.g. 6.28 × 10³, 2.00 × 10⁻⁵).
+    /// Default precision is two decimals: teaching results keep at most two decimal places.
     /// </summary>
-    public static string ToUnicodeScientific(double value, int precision = 3, bool fixedDecimals = false)
+    public static string ToUnicodeScientific(double value, int precision = 2, bool fixedDecimals = false)
     {
         if (double.IsNaN(value)) return "NaN";
         if (double.IsPositiveInfinity(value)) return "∞";
         if (double.IsNegativeInfinity(value)) return "-∞";
 
-        if (Math.Abs(value) < 1e-15) return "0";
+        if (value == 0) return "0";
 
         double absVal = Math.Abs(value);
         if (absVal >= 0.001 && absVal < 1000)
@@ -102,14 +104,15 @@ public static class ScientificNotationFormatter
 
     /// <summary>
     /// Formats an engineering value with appropriate SI engineering prefix (e.g. 1.25 mA, 10 kΩ, 4.7 μF, 100 kHz).
+    /// Default precision is two decimals: teaching results keep at most two decimal places.
     /// </summary>
-    public static string FormatWithUnit(double value, string baseUnit, int precision = 3, bool useLatex = false)
+    public static string FormatWithUnit(double value, string baseUnit, int precision = 2, bool useLatex = false)
     {
         if (double.IsNaN(value)) return useLatex ? $@"\text{{NaN {baseUnit}}}" : $"NaN {baseUnit}";
         if (double.IsPositiveInfinity(value)) return useLatex ? $@"\infty\text{{ {baseUnit}}}" : $"∞ {baseUnit}";
         if (double.IsNegativeInfinity(value)) return useLatex ? $@"-\infty\text{{ {baseUnit}}}" : $"-∞ {baseUnit}";
 
-        if (Math.Abs(value) < 1e-15)
+        if (value == 0)
         {
             return useLatex ? $@"0\text{{ {baseUnit}}}" : $"0 {baseUnit}";
         }
@@ -154,6 +157,25 @@ public static class ScientificNotationFormatter
         }
 
         return $"{scaledStr} {unitStr}";
+    }
+
+    /// <summary>
+    /// Rounds a value to at most two decimal places at its engineering display scale
+    /// (textbook hand-calculation convention) and returns the SI value the displayed
+    /// number represents. Amplifier strategies use it to reproduce the textbook
+    /// workflow of rounding an intermediate result before feeding it into the next
+    /// formula. Values outside the supported prefix range use the scientific scale.
+    /// </summary>
+    public static double RoundEngineering(double value)
+    {
+        if (!double.IsFinite(value) || value == 0) return value;
+        double absVal = Math.Abs(value);
+        int exp3 = (int)Math.Floor(Math.Log10(absVal) / 3.0) * 3;
+        double scale = exp3 >= -15 && exp3 <= 12
+            ? Math.Pow(10, exp3)
+            : Math.Pow(10, (int)Math.Floor(Math.Log10(absVal)));
+        double rounded = Math.Round(value / scale, 2, MidpointRounding.AwayFromZero) * scale;
+        return rounded == 0 ? value : rounded;
     }
 
     public static string ToSuperscript(int exp)

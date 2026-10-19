@@ -1,17 +1,40 @@
+// ============================================================================
+// File: apps/desktop-winui/Controls/CircuitSymbolPreview.xaml.cs
+// Description: 符号库 / 检查器中的元件符号卡片预览。
+//
+// 重构说明（2026-10-18，task-6）
+//   * 原实现手写 switch-case + SVG path 字符串，与画布
+//     （Controls/CircuitCanvas.xaml.cs）各有一套符号几何且不一致。
+//   * 现在统一从 Models/SymbolGeometry.cs（IEC 60617 / IEEE 315 几何库）取
+//     元件局部坐标图元，在 100x100 卡片画布内自动缩放、居中后渲染。
+//   * 卡片 SymbolId 先映射到 ElementType（passive.* / bjt.* / fet.* /
+//     source.* / controlled.* / reference.* / diode.* 等定义 id）。
+//   * VCC 电源端口按 Multisim 参考图绘制“电源横杠 + 引线”，不再画向上三角
+//     箭头；“VCC” 居中文字由卡片文本层单独绘制（不进入几何库）。
+// ============================================================================
+
 using System;
-using System.Collections.Generic;
+using System.Numerics;
+using CircuitAssistant.Models;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Markup;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
+using Windows.Foundation;
 using Windows.UI;
 
 namespace CircuitAssistant.Controls;
 
 public sealed partial class CircuitSymbolPreview : UserControl
 {
+    // 卡片逻辑画布固定为 100 x 100（见 XAML），由外层 Viewbox 等比缩放。
+    private const float CardSize = 100f;
+    private const float CardMargin = 6f;
+
+    // VCC 端口卡片顶部预留的空间，用于居中绘制 “VCC” 文本（Multisim 风格）。
+    private const float VccCaptionReserve = 22f;
+
     public static readonly DependencyProperty SymbolIdProperty =
         DependencyProperty.Register(
             nameof(SymbolId),
@@ -62,327 +85,208 @@ public sealed partial class CircuitSymbolPreview : UserControl
         return new SolidColorBrush(color);
     }
 
+    /// <summary>按当前 SymbolId / 主题重新渲染卡片符号。</summary>
     public void Render()
-    {
-        SymbolCanvas.Children.Clear();
-        var stroke = GetStrokeBrush();
-        string key = NormalizeSymbolKey(SymbolId);
-
-        switch (key)
-        {
-            case "ground":
-                // Reference Ground (IEC 60617 / GB/T 4728)
-                AddPath(stroke, "M50,0 V38 M22,38 H78 M32,50 H68 M42,62 H58", 2.8);
-                break;
-
-            case "resistor":
-                // Rectangular Resistor (IEC / GB standard)
-                AddPath(stroke, "M0,50 H28 M72,50 H100", 2.8);
-                AddPath(stroke, "M28,36 H72 V64 H28 Z", 2.8);
-                break;
-
-            case "resistor_ansi":
-                // Zig-zag Resistor (ANSI / IEEE)
-                AddPath(stroke, "M0,50 H22 L29,34 L43,66 L57,34 L71,66 L78,50 H100", 2.8);
-                break;
-
-            case "capacitor":
-                // Parallel Plate Capacitor
-                AddPath(stroke, "M0,50 H44 M56,50 H100", 2.8);
-                AddPath(stroke, "M44,22 V78 M56,22 V78", 3.0);
-                break;
-
-            case "inductor":
-                // Arc Coils Inductor
-                AddPath(stroke, "M0,50 H20 M80,50 H100", 2.8);
-                AddPath(stroke, "M20,50 A7.5,7.5 0 0 1 35,50 A7.5,7.5 0 0 1 50,50 A7.5,7.5 0 0 1 65,50 A7.5,7.5 0 0 1 80,50", 2.8);
-                break;
-
-            case "transformer":
-                // Ideal Transformer with magnetic core and polarity dots
-                AddPath(stroke, "M0,30 H36 M0,70 H36 M64,30 H100 M64,70 H100", 2.4);
-                AddPath(stroke, "M36,30 A6.67,6.67 0 0 0 36,43.33 A6.67,6.67 0 0 0 36,56.67 A6.67,6.67 0 0 0 36,70", 2.4);
-                AddPath(stroke, "M47,20 V80 M53,20 V80", 2.4);
-                AddPath(stroke, "M64,30 A6.67,6.67 0 0 1 64,43.33 A6.67,6.67 0 0 1 64,56.67 A6.67,6.67 0 0 1 64,70", 2.4);
-                AddCircle(stroke, 20, 22, 3.2, true);
-                AddCircle(stroke, 80, 22, 3.2, true);
-                break;
-
-            case "vdc":
-                // DC Voltage Source (+ / - polarity)
-                AddPath(stroke, "M50,0 V27 M50,73 V100", 2.6);
-                AddCircle(stroke, 50, 50, 23, false, 2.6);
-                AddPath(stroke, "M42,38 H58 M50,30 V46", 2.4);
-                AddPath(stroke, "M42,63 H58", 2.4);
-                break;
-
-            case "idc":
-                // DC Current Source (arrow)
-                AddPath(stroke, "M50,0 V27 M50,73 V100", 2.6);
-                AddCircle(stroke, 50, 50, 23, false, 2.6);
-                AddPath(stroke, "M50,63 V38", 2.4);
-                AddPolygon(stroke, new[] { 50.0, 30.0, 42.0, 42.0, 58.0, 42.0 }, true);
-                break;
-
-            case "vac":
-                // AC Small-Signal Voltage Source (sine wave)
-                AddPath(stroke, "M50,0 V27 M50,73 V100", 2.6);
-                AddCircle(stroke, 50, 50, 23, false, 2.6);
-                AddPath(stroke, "M35,50 C39,36 45,36 50,50 C55,64 61,64 65,50", 2.6);
-                break;
-
-            case "iac":
-                // AC Small-Signal Current Source
-                AddPath(stroke, "M50,0 V27 M50,73 V100", 2.6);
-                AddCircle(stroke, 50, 50, 23, false, 2.6);
-                AddPath(stroke, "M50,64 C58,58 42,52 50,46", 2.4);
-                AddPolygon(stroke, new[] { 50.0, 28.0, 42.0, 42.0, 58.0, 42.0 }, true);
-                break;
-
-            case "diode":
-                // Standard Rectifier Diode
-                AddPath(stroke, "M0,50 H36 M64,50 H100", 2.8);
-                AddPath(stroke, "M36,30 L64,50 L36,70 Z", 2.8, stroke);
-                AddPath(stroke, "M64,28 V72", 3.0);
-                break;
-
-            case "bjt_npn":
-                // NPN Transistor with outward emitter arrow
-                AddCircle(stroke, 48, 50, 32, false, 1.8);
-                AddPath(stroke, "M0,50 H36", 2.4);
-                AddPath(stroke, "M36,26 V74", 3.8); // Base Bar
-                AddPath(stroke, "M36,40 L60,22 V0", 2.4); // Collector
-                AddPath(stroke, "M36,60 L60,78 V100", 2.4); // Emitter
-                // Emitter arrow pointing OUT
-                AddPolygon(stroke, new[] { 50.0, 68.0, 62.0, 79.0, 53.0, 82.0 }, true);
-                break;
-
-            case "bjt_pnp":
-                // PNP Transistor with inward emitter arrow
-                AddCircle(stroke, 48, 50, 32, false, 1.8);
-                AddPath(stroke, "M0,50 H36", 2.4);
-                AddPath(stroke, "M36,26 V74", 3.8);
-                AddPath(stroke, "M36,40 L60,22 V0", 2.4);
-                AddPath(stroke, "M36,60 L60,78 V100", 2.4);
-                // Emitter arrow pointing IN
-                AddPolygon(stroke, new[] { 60.0, 78.0, 48.0, 68.0, 54.0, 64.0 }, true);
-                break;
-
-            case "mosfet_n_enh":
-                // NMOS Enhancement Transistor (segmented channel, arrow pointing IN)
-                AddPath(stroke, "M0,50 H28", 2.4);
-                AddPath(stroke, "M28,24 V76", 3.4); // Gate plate
-                AddPath(stroke, "M44,24 V38 M44,44 V56 M44,62 V76", 3.2); // Segmented channel
-                AddPath(stroke, "M44,28 H62 V0", 2.4); // Drain
-                AddPath(stroke, "M44,72 H62 V100", 2.4); // Source
-                AddPath(stroke, "M44,50 H75", 2.2);
-                AddPolygon(stroke, new[] { 46.0, 50.0, 58.0, 44.0, 58.0, 56.0 }, true);
-                break;
-
-            case "mosfet_p_enh":
-                // PMOS Enhancement Transistor (segmented channel, arrow pointing OUT)
-                AddPath(stroke, "M0,50 H28", 2.4);
-                AddPath(stroke, "M28,24 V76", 3.4); // Gate plate
-                AddPath(stroke, "M44,24 V38 M44,44 V56 M44,62 V76", 3.2); // Segmented channel
-                AddPath(stroke, "M44,28 H62 V0", 2.4); // Drain
-                AddPath(stroke, "M44,72 H62 V100", 2.4); // Source
-                AddPath(stroke, "M44,50 H75", 2.2);
-                AddPolygon(stroke, new[] { 60.0, 50.0, 48.0, 44.0, 48.0, 56.0 }, true);
-                break;
-
-            case "mosfet_n_dep":
-                // NMOS Depletion Transistor (solid channel, arrow pointing IN)
-                AddPath(stroke, "M0,50 H28", 2.4);
-                AddPath(stroke, "M28,24 V76", 3.4); // Gate plate
-                AddPath(stroke, "M44,24 V76", 3.6); // Solid channel
-                AddPath(stroke, "M44,28 H62 V0", 2.4); // Drain
-                AddPath(stroke, "M44,72 H62 V100", 2.4); // Source
-                AddPath(stroke, "M44,50 H75", 2.2);
-                AddPolygon(stroke, new[] { 46.0, 50.0, 58.0, 44.0, 58.0, 56.0 }, true);
-                break;
-
-            case "mosfet_p_dep":
-                // PMOS Depletion Transistor (solid channel, arrow pointing OUT)
-                AddPath(stroke, "M0,50 H28", 2.4);
-                AddPath(stroke, "M28,24 V76", 3.4); // Gate plate
-                AddPath(stroke, "M44,24 V76", 3.6); // Solid channel
-                AddPath(stroke, "M44,28 H62 V0", 2.4); // Drain
-                AddPath(stroke, "M44,72 H62 V100", 2.4); // Source
-                AddPath(stroke, "M44,50 H75", 2.2);
-                AddPolygon(stroke, new[] { 60.0, 50.0, 48.0, 44.0, 48.0, 56.0 }, true);
-                break;
-
-            case "jfet_n":
-                // JFET N-channel (arrow pointing IN)
-                AddPath(stroke, "M0,50 H60", 2.4); // Gate
-                AddPath(stroke, "M60,0 V100", 3.4); // Channel
-                AddPolygon(stroke, new[] { 60.0, 50.0, 46.0, 44.0, 46.0, 56.0 }, true);
-                break;
-
-            case "jfet_p":
-                // JFET P-channel (arrow pointing OUT)
-                AddPath(stroke, "M0,50 H60", 2.4); // Gate
-                AddPath(stroke, "M60,0 V100", 3.4); // Channel
-                AddPolygon(stroke, new[] { 34.0, 50.0, 48.0, 44.0, 48.0, 56.0 }, true);
-                break;
-
-            case "vcvs":
-                // Voltage-Controlled Voltage Source (Diamond + / -)
-                DrawDiamondSource(stroke, isVoltageOut: true, isVoltageControl: true);
-                break;
-
-            case "vccs":
-                // Voltage-Controlled Current Source (Diamond arrow)
-                DrawDiamondSource(stroke, isVoltageOut: false, isVoltageControl: true);
-                break;
-
-            case "ccvs":
-                // Current-Controlled Voltage Source
-                DrawDiamondSource(stroke, isVoltageOut: true, isVoltageControl: false);
-                break;
-
-            case "cccs":
-                // Current-Controlled Current Source
-                DrawDiamondSource(stroke, isVoltageOut: false, isVoltageControl: false);
-                break;
-
-            default:
-                // Default fallback: crisp resistor rectangle
-                AddPath(stroke, "M0,50 H28 M72,50 H100 M28,36 H72 V64 H28 Z", 2.8);
-                break;
-        }
-    }
-
-    private void DrawDiamondSource(Brush stroke, bool isVoltageOut, bool isVoltageControl)
-    {
-        // Diamond
-        AddPath(stroke, "M56,18 L86,50 L56,82 L26,50 Z", 2.6);
-        AddPath(stroke, "M56,0 V18 M56,82 V100", 2.4);
-        AddPath(stroke, "M0,34 H26 M0,66 H26", 2.2);
-
-        if (isVoltageOut)
-        {
-            AddPath(stroke, "M50,36 H62 M56,30 V42 M50,64 H62", 2.4);
-        }
-        else
-        {
-            AddPath(stroke, "M56,40 V58", 2.4);
-            AddPolygon(stroke, new[] { 56.0, 68.0, 49.0, 56.0, 63.0, 56.0 }, true);
-        }
-
-        if (isVoltageControl)
-        {
-            AddPath(stroke, "M12,26 H24 M18,20 V32 M12,74 H24", 2.2);
-        }
-        else
-        {
-            AddPolygon(stroke, new[] { 26.0, 34.0, 16.0, 28.0, 16.0, 40.0 }, true);
-        }
-    }
-
-    private void AddPath(Brush stroke, string data, double thickness, Brush? fill = null)
     {
         try
         {
-            Geometry? geom = null;
-            try
-            {
-                geom = XamlBindingHelper.ConvertValue(typeof(Geometry), data) as Geometry;
-            }
-            catch { }
-
-            if (geom == null)
-            {
-                var xaml = $"<Path xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" Data=\"{data}\" />";
-                if (XamlReader.Load(xaml) is Microsoft.UI.Xaml.Shapes.Path parsed)
-                {
-                    geom = parsed.Data;
-                }
-            }
-
-            if (geom != null)
-            {
-                var path = new Microsoft.UI.Xaml.Shapes.Path
-                {
-                    Data = geom,
-                    Stroke = stroke,
-                    StrokeThickness = thickness,
-                    Fill = fill,
-                    StrokeStartLineCap = PenLineCap.Round,
-                    StrokeEndLineCap = PenLineCap.Round,
-                    StrokeLineJoin = PenLineJoin.Round
-                };
-                SymbolCanvas.Children.Add(path);
-            }
+            SymbolCanvas.Children.Clear();
+            var stroke = GetStrokeBrush();
+            var (type, ansiResistor) = ResolveSymbol(SymbolId);
+            var primitives = ansiResistor
+                ? SymbolGeometryLibrary.BuildAnsiResistor()
+                : SymbolGeometryLibrary.Build(type);
+            RenderPrimitives(primitives, stroke, type);
         }
         catch (Exception ex)
         {
-            App.LogTrace($"[CircuitSymbolPreview AddPath] failed for '{data}': {ex.Message}");
+            App.LogTrace($"[CircuitSymbolPreview Render] failed for '{SymbolId}': {ex.Message}");
         }
     }
 
-    private void AddCircle(Brush stroke, double cx, double cy, double radius, bool filled = false, double thickness = 2.4)
+    private void RenderPrimitives(
+        System.Collections.Generic.IReadOnlyList<SymbolPrimitive> primitives,
+        Brush stroke,
+        ElementType type)
     {
-        var ellipse = new Ellipse
+        var (min, max) = SymbolGeometryLibrary.GetBounds(primitives);
+        float contentWidth = MathF.Max(max.X - min.X, 1f);
+        float contentHeight = MathF.Max(max.Y - min.Y, 1f);
+
+        // 自动缩放并居中到 100x100 卡片。VCC 端口顶部额外预留文字空间。
+        float topReserve = type == ElementType.VccPort ? VccCaptionReserve : CardMargin;
+        float availableWidth = CardSize - CardMargin * 2f;
+        float availableHeight = CardSize - topReserve - CardMargin;
+        float scale = MathF.Min(availableWidth / contentWidth, availableHeight / contentHeight);
+        if (!float.IsFinite(scale) || scale <= 0f) scale = 1f;
+
+        var contentCenter = (min + max) * 0.5f;
+        var targetCenter = new Vector2(CardMargin + availableWidth / 2f, topReserve + availableHeight / 2f);
+
+        Vector2 ToCanvas(Vector2 localPoint) => targetCenter + (localPoint - contentCenter) * scale;
+        double ToCanvasThickness(float localThickness) => Math.Clamp(localThickness * scale, 1.05, 3.0);
+
+        foreach (var primitive in primitives)
         {
-            Width = radius * 2,
-            Height = radius * 2,
-            Stroke = stroke,
-            StrokeThickness = thickness,
-            Fill = filled ? stroke : null
-        };
-        Canvas.SetLeft(ellipse, cx - radius);
-        Canvas.SetTop(ellipse, cy - radius);
-        SymbolCanvas.Children.Add(ellipse);
+            switch (primitive.Kind)
+            {
+                case SymbolPrimitiveKind.Polyline:
+                    AddPolyline(stroke, primitive, ToCanvas, ToCanvasThickness);
+                    break;
+
+                case SymbolPrimitiveKind.FilledPolygon:
+                    AddPolygon(stroke, primitive, ToCanvas);
+                    break;
+
+                case SymbolPrimitiveKind.Circle:
+                    AddCircle(stroke, primitive, ToCanvas, ToCanvasThickness);
+                    break;
+            }
+        }
+
+        // Multisim 风格：VCC 端口符号上方居中绘制 “VCC” 文本（卡片文本层，几何库不含文字）。
+        if (type == ElementType.VccPort)
+        {
+            var caption = new TextBlock
+            {
+                Text = "VCC",
+                Width = CardSize,
+                TextAlignment = TextAlignment.Center,
+                FontSize = 14,
+                FontWeight = new Windows.UI.Text.FontWeight { Weight = 600 },
+                Foreground = stroke
+            };
+            Canvas.SetLeft(caption, 0);
+            Canvas.SetTop(caption, 1);
+            SymbolCanvas.Children.Add(caption);
+        }
     }
 
-    private void AddPolygon(Brush fillAndStroke, double[] coords, bool filled = true)
+    private void AddPolyline(
+        Brush stroke,
+        SymbolPrimitive primitive,
+        Func<Vector2, Vector2> toCanvas,
+        Func<float, double> toCanvasThickness)
     {
+        if (primitive.Points.Count < 2) return;
+
+        var polyline = new Polyline
+        {
+            Stroke = stroke,
+            StrokeThickness = toCanvasThickness(primitive.Thickness),
+            StrokeLineJoin = PenLineJoin.Round,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round
+        };
+        foreach (var point in primitive.Points)
+        {
+            var canvasPoint = toCanvas(point);
+            polyline.Points.Add(new Point(canvasPoint.X, canvasPoint.Y));
+        }
+        SymbolCanvas.Children.Add(polyline);
+    }
+
+    private void AddPolygon(Brush fill, SymbolPrimitive primitive, Func<Vector2, Vector2> toCanvas)
+    {
+        if (primitive.Points.Count < 3) return;
+
         var polygon = new Polygon
         {
-            Fill = filled ? fillAndStroke : null,
-            Stroke = fillAndStroke,
-            StrokeThickness = 1.5,
+            Fill = fill,
+            Stroke = fill,
+            StrokeThickness = 0.5,
             StrokeLineJoin = PenLineJoin.Round
         };
-        for (int i = 0; i < coords.Length; i += 2)
+        foreach (var point in primitive.Points)
         {
-            polygon.Points.Add(new Windows.Foundation.Point(coords[i], coords[i + 1]));
+            var canvasPoint = toCanvas(point);
+            polygon.Points.Add(new Point(canvasPoint.X, canvasPoint.Y));
         }
         SymbolCanvas.Children.Add(polygon);
     }
 
-    private static string NormalizeSymbolKey(string id)
+    private void AddCircle(
+        Brush stroke,
+        SymbolPrimitive primitive,
+        Func<Vector2, Vector2> toCanvas,
+        Func<float, double> toCanvasThickness)
     {
-        if (string.IsNullOrWhiteSpace(id)) return "resistor";
+        if (primitive.Points.Count < 2) return;
+
+        var canvasCenter = toCanvas(primitive.Points[0]);
+        var canvasEdge = toCanvas(primitive.Points[1]);
+        float radius = Vector2.Distance(canvasCenter, canvasEdge);
+        if (radius <= 0.1f) return;
+
+        var ellipse = new Ellipse
+        {
+            Width = radius * 2f,
+            Height = radius * 2f,
+            Stroke = stroke,
+            StrokeThickness = toCanvasThickness(primitive.Thickness),
+            Fill = primitive.Filled ? stroke : null
+        };
+        Canvas.SetLeft(ellipse, canvasCenter.X - radius);
+        Canvas.SetTop(ellipse, canvasCenter.Y - radius);
+        SymbolCanvas.Children.Add(ellipse);
+    }
+
+    /// <summary>
+    /// 卡片 SymbolId → ElementType 映射。SymbolId 来自
+    /// ViewModels/AnalysisStudioViewModel.InitializeSymbols() 的 CircuitSymbolItem.Id
+    /// （也即 CircuitElement.DefinitionId）。
+    /// </summary>
+    private static (ElementType Type, bool AnsiResistor) ResolveSymbol(string? id)
+    {
+        if (string.IsNullOrWhiteSpace(id)) return (ElementType.Resistor, false);
         string s = id.Trim().ToLowerInvariant();
 
-        if (s.Contains("ground") || s == "gnd" || s == "0") return "ground";
-        if (s.Contains("transformer")) return "transformer";
-        if (s.Contains("resistor_ansi") || s.Contains("ansi")) return "resistor_ansi";
-        if (s.Contains("vcvs")) return "vcvs";
-        if (s.Contains("vccs")) return "vccs";
-        if (s.Contains("ccvs")) return "ccvs";
-        if (s.Contains("cccs")) return "cccs";
-        if (s.Contains("mosfet_n_enh") || s.Contains("n_enh")) return "mosfet_n_enh";
-        if (s.Contains("mosfet_p_enh") || s.Contains("p_enh")) return "mosfet_p_enh";
-        if (s.Contains("mosfet_n_dep") || s.Contains("n_dep")) return "mosfet_n_dep";
-        if (s.Contains("mosfet_p_dep") || s.Contains("p_dep")) return "mosfet_p_dep";
-        if (s.Contains("jfet_n") || s == "jfet") return "jfet_n";
-        if (s.Contains("jfet_p")) return "jfet_p";
-        if (s.Contains("mosfet") || s.Contains("nmos")) return "mosfet_n_enh";
-        if (s.Contains("pmos")) return "mosfet_p_enh";
-        if (s.Contains("pnp")) return "bjt_pnp";
-        if (s.Contains("npn") || s.Contains("bjt") || s.StartsWith("q")) return "bjt_npn";
-        if (s.Contains("v_ac") || s.Contains("vac") || s == "vs") return "vac";
-        if (s.Contains("i_ac") || s == "iac") return "iac";
-        if (s.Contains("v_dc") || s.Contains("vdc") || s.Contains("vcc")) return "vdc";
-        if (s.Contains("i_dc") || s == "idc") return "idc";
-        if (s.Contains("diode") || s.StartsWith("d")) return "diode";
-        if (s.Contains("inductor") || s.StartsWith("l")) return "inductor";
-        if (s.Contains("capacitor") || s.StartsWith("c")) return "capacitor";
-        if (s.Contains("resistor") || s.StartsWith("rb") || s.StartsWith("rc") || s.StartsWith("re") || s.StartsWith("rl") || s.StartsWith("r")) return "resistor";
+        // 参考地 / 电源端口
+        if (s.Contains("ground") || s == "gnd" || s == "0") return (ElementType.Ground, false);
+        if (s.Contains("vcc_port")) return (ElementType.VccPort, false);
 
-        return "resistor";
+        // 无源器件
+        if (s.Contains("transformer")) return (ElementType.Transformer, false);
+        if (s.Contains("resistor_ansi") || s.Contains("_ansi") || s == "ansi") return (ElementType.Resistor, true);
+
+        // 受控源（必须在 passive 的首字母启发式与 vcc 判断之前，
+        // 否则 controlled.vcvs / controlled.vccs 会被误判为电容或电源）
+        if (s.Contains("vcvs")) return (ElementType.Vcvs, false);
+        if (s.Contains("vccs")) return (ElementType.Vccs, false);
+        if (s.Contains("ccvs")) return (ElementType.Ccvs, false);
+        if (s.Contains("cccs")) return (ElementType.Cccs, false);
+
+        // 场效应管
+        if (s.Contains("mosfet_n_enh") || s.Contains("n_enh") || s.Contains("nmos")) return (ElementType.MosfetNEnh, false);
+        if (s.Contains("mosfet_p_enh") || s.Contains("p_enh") || s.Contains("pmos")) return (ElementType.MosfetPEnh, false);
+        if (s.Contains("mosfet_n_dep") || s.Contains("n_dep")) return (ElementType.MosfetNDep, false);
+        if (s.Contains("mosfet_p_dep") || s.Contains("p_dep")) return (ElementType.MosfetPDep, false);
+        if (s.Contains("jfet_n")) return (ElementType.JfetN, false);
+        if (s.Contains("jfet_p")) return (ElementType.JfetP, false);
+        if (s.Contains("mosfet")) return (ElementType.Mosfet, false);
+        if (s.Contains("jfet")) return (ElementType.Jfet, false);
+
+        // 双极型三极管
+        if (s.Contains("pnp")) return (ElementType.BjtPnp, false);
+        if (s.Contains("npn") || s.Contains("bjt") || s.StartsWith("q")) return (ElementType.BjtNpn, false);
+
+        // 独立源
+        if (s.Contains("i_ac") || s == "iac") return (ElementType.AcCurrentSource, false);
+        if (s.Contains("v_ac") || s.Contains("vac")) return (ElementType.AcVoltageSource, false);
+        if (s.Contains("i_dc") || s == "idc") return (ElementType.DcCurrentSource, false);
+        if (s.Contains("v_dc") || s.Contains("vdc")) return (ElementType.DcVoltageSource, false);
+        if (s.Contains("vcc")) return (ElementType.DcVoltageSource, false);
+
+        // 二极管
+        if (s.Contains("diode") || s.StartsWith("d")) return (ElementType.Diode, false);
+
+        // 无源器件（首字母启发式放在最后，避免与 semiconductor / source / controlled 冲突）
+        if (s.Contains("capacitor_polarized") || s.Contains("polarized") || s.Contains("electrolytic"))
+            return (ElementType.CapacitorPolarized, false);
+        if (s.Contains("capacitor") || s.StartsWith("c")) return (ElementType.Capacitor, false);
+        if (s.Contains("inductor") || s.StartsWith("l")) return (ElementType.Inductor, false);
+        if (s.Contains("resistor") || s.StartsWith("r")) return (ElementType.Resistor, false);
+
+        return (ElementType.Resistor, false);
     }
 }

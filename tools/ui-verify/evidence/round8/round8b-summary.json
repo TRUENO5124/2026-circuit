@@ -1,0 +1,90 @@
+﻿{
+    "phase":  "round8b",
+    "exe":  "D:\\BJTU\\2026年大创\\apps\\desktop-winui\\bin\\_verify\\CircuitAssistant.exe",
+    "exeLastWriteTime":  "2026-10-18T18:30:46.9545681+08:00",
+    "capturedAt":  "2026-10-18T18:33:16.0385588+08:00",
+    "checks":  [
+                   {
+                       "id":  "b07-solve-success",
+                       "pass":  true,
+                       "detail":  "求解完成 · 晶体管共射极放大电路 · 6 个步骤"
+                   },
+                   {
+                       "id":  "b07-no-resistor-branch-error",
+                       "pass":  true,
+                       "detail":  "匹配数=0"
+                   },
+                   {
+                       "id":  "metrics-rs-row",
+                       "pass":  true,
+                       "detail":  "匹配数=1"
+                   },
+                   {
+                       "id":  "metrics-aus-row",
+                       "pass":  true,
+                       "detail":  "匹配数=1"
+                   },
+                   {
+                       "id":  "metrics-rs-value-50ohm",
+                       "pass":  true,
+                       "detail":  "匹配数=1"
+                   },
+                   {
+                       "id":  "metrics-aus-value-32.91",
+                       "pass":  true,
+                       "detail":  "匹配数=1"
+                   },
+                   {
+                       "id":  "qpoint-ibq-20.69uA",
+                       "pass":  true,
+                       "detail":  "匹配数=1"
+                   },
+                   {
+                       "id":  "qpoint-icq-2.07mA",
+                       "pass":  true,
+                       "detail":  "匹配数=1"
+                   },
+                   {
+                       "id":  "qpoint-vceq-7.84V",
+                       "pass":  true,
+                       "detail":  "匹配数=1"
+                   },
+                   {
+                       "id":  "ac-rows-not-overlapped",
+                       "pass":  true,
+                       "detail":  "Rs.y=939 Aus.y=978 行距=39 px"
+                   },
+                   {
+                       "id":  "normal-template-no-rs-row",
+                       "pass":  true,
+                       "detail":  "匹配数=0"
+                   },
+                   {
+                       "id":  "normal-template-no-aus-row",
+                       "pass":  true,
+                       "detail":  "匹配数=0"
+                   }
+               ],
+    "screenshots":  [
+                        {
+                            "name":  "11b_b07_metrics_fixed",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\round8\\11b_b07_metrics_fixed.png",
+                            "note":  "B07 metrics tab after AC-card grid fix (18:30:46 build)"
+                        },
+                        {
+                            "name":  "12b_b07_qpoint_fixed",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\round8\\12b_b07_qpoint_fixed.png",
+                            "note":  "B07 Q point card (fixed build) region=(1317,398,291x238)"
+                        },
+                        {
+                            "name":  "13b_b07_ac_metrics_fixed",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\round8\\13b_b07_ac_metrics_fixed.png",
+                            "note":  "B07 AC card incl Rs/Aus rows (fixed build) region=(1317,654,303x389)"
+                        },
+                        {
+                            "name":  "14b_normal_metrics_fixed",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\round8\\14b_normal_metrics_fixed.png",
+                            "note":  "control: normal CE template metrics after fix (no Rs/Aus rows expected)"
+                        }
+                    ]
+}

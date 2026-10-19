@@ -1,0 +1,403 @@
+{
+  "Version": "1.2.0",
+  "ProjectName": "3-6题",
+  "ProjectFileName": "3-6题.circuit",
+  "Description": "",
+  "CreatedAt": "2026-10-18T03:22:07.0710027+08:00",
+  "ModifiedAt": "2026-10-18T12:17:49.772768+08:00",
+  "Parameters": {
+    "VCC": 12,
+    "Rb1": 51,
+    "Rb2": 15,
+    "Rc": 3,
+    "Re": 1,
+    "RL": 10,
+    "C1": 10,
+    "C2": 10,
+    "Ce": 47,
+    "Beta": 100,
+    "Freq": 1
+  },
+  "ParameterUnits": {
+    "VCC": "V",
+    "Rb1": "kΩ",
+    "Rb2": "kΩ",
+    "Rc": "kΩ",
+    "Re": "kΩ",
+    "RL": "kΩ",
+    "C1": "μF",
+    "C2": "μF",
+    "Ce": "μF",
+    "Freq": "kHz"
+  },
+  "IsTeachingTemplate": false,
+  "Elements": [
+    {
+      "Id": "R1",
+      "Name": "电阻器 (Resistor) R1",
+      "DefinitionId": "passive.resistor",
+      "Category": "无源器件",
+      "Description": "欧姆定律无源线性电阻，分压偏置与交流负载",
+      "Value": 0,
+      "FrequencyHz": 1000,
+      "Material": "Silicon",
+      "Type": "Resistor",
+      "DisplayNumber": 1.3,
+      "UnitSymbol": "kΩ",
+      "X": 381.95502,
+      "Y": 121.519966,
+      "Width": 80,
+      "Height": 50,
+      "RotationDeg": 90,
+      "Orientation": "Vertical",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "1",
+          "Name": "1",
+          "RelativeX": -40,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        },
+        {
+          "Id": "2",
+          "Name": "2",
+          "RelativeX": 40,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        }
+      ]
+    },
+    {
+      "Id": "R2",
+      "Name": "电阻器 (Resistor) R2",
+      "DefinitionId": "passive.resistor",
+      "Category": "无源器件",
+      "Description": "欧姆定律无源线性电阻，分压偏置与交流负载",
+      "Value": 0,
+      "FrequencyHz": 1000,
+      "Material": "Silicon",
+      "Type": "Resistor",
+      "DisplayNumber": 2,
+      "UnitSymbol": "kΩ",
+      "X": 380.94928,
+      "Y": 391.6593,
+      "Width": 80,
+      "Height": 50,
+      "RotationDeg": 90,
+      "Orientation": "Vertical",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "1",
+          "Name": "1",
+          "RelativeX": -40,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        },
+        {
+          "Id": "2",
+          "Name": "2",
+          "RelativeX": 40,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        }
+      ]
+    },
+    {
+      "Id": "R3",
+      "Name": "电阻器 (Resistor) R3",
+      "DefinitionId": "passive.resistor",
+      "Category": "无源器件",
+      "Description": "欧姆定律无源线性电阻，分压偏置与交流负载",
+      "Value": 0,
+      "FrequencyHz": 1000,
+      "Material": "Silicon",
+      "Type": "Resistor",
+      "DisplayNumber": 15,
+      "UnitSymbol": "kΩ",
+      "X": 232.03003,
+      "Y": 164.75685,
+      "Width": 80,
+      "Height": 50,
+      "RotationDeg": 90,
+      "Orientation": "Vertical",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "1",
+          "Name": "1",
+          "RelativeX": -40,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        },
+        {
+          "Id": "2",
+          "Name": "2",
+          "RelativeX": 40,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        }
+      ]
+    },
+    {
+      "Id": "R4",
+      "Name": "电阻器 (Resistor) R4",
+      "DefinitionId": "passive.resistor",
+      "Category": "无源器件",
+      "Description": "欧姆定律无源线性电阻，分压偏置与交流负载",
+      "Value": 0,
+      "FrequencyHz": 1000,
+      "Material": "Silicon",
+      "Type": "Resistor",
+      "DisplayNumber": 470,
+      "UnitSymbol": "kΩ",
+      "X": 232.96608,
+      "Y": 346.26453,
+      "Width": 80,
+      "Height": 50,
+      "RotationDeg": 90,
+      "Orientation": "Vertical",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "1",
+          "Name": "1",
+          "RelativeX": -40,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        },
+        {
+          "Id": "2",
+          "Name": "2",
+          "RelativeX": 40,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        }
+      ]
+    },
+    {
+      "Id": "GND1",
+      "Name": "参考地 (GND) GND1",
+      "DefinitionId": "reference.ground",
+      "Category": "参考地",
+      "Description": "基准零电位参考节点，统一电路地电位基准",
+      "Value": 0,
+      "FrequencyHz": 1000,
+      "Material": "Silicon",
+      "Type": "Ground",
+      "DisplayNumber": 0,
+      "UnitSymbol": "V",
+      "X": 384.1147,
+      "Y": 533.8154,
+      "Width": 80,
+      "Height": 50,
+      "RotationDeg": 0,
+      "Orientation": "Horizontal",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "GND",
+          "Name": "GND",
+          "RelativeX": 0,
+          "RelativeY": -22,
+          "ConnectedNetId": -1
+        }
+      ]
+    },
+    {
+      "Id": "VCC1",
+      "Name": "电源端口 (+VCC) VCC1",
+      "DefinitionId": "reference.vcc_port",
+      "Category": "参考地",
+      "Description": "正电源基准端口 (+VCC)，直接向电路网络注入 +12V 直流工作电位",
+      "Value": 0,
+      "FrequencyHz": 1000,
+      "Material": "Silicon",
+      "Type": "VccPort",
+      "DisplayNumber": 12,
+      "UnitSymbol": "V",
+      "X": 559.7953,
+      "Y": 51.16091,
+      "Width": 80,
+      "Height": 50,
+      "RotationDeg": 90,
+      "Orientation": "Vertical",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "VCC",
+          "Name": "VCC",
+          "RelativeX": 0,
+          "RelativeY": 22,
+          "ConnectedNetId": -1
+        }
+      ]
+    },
+    {
+      "Id": "Q1",
+      "Name": "PNP 双极型三极管 Q1",
+      "DefinitionId": "bjt.pnp",
+      "Category": "双极型三极管",
+      "Description": "PNP 型双极型三极管，默认发射极在上、集电极在下，发射极箭头向内；硅管 VEB≈0.7 V，可切换锗管（≈0.3 V）",
+      "Value": 0,
+      "FrequencyHz": 1000,
+      "Material": "Germanium",
+      "Type": "BjtPnp",
+      "DisplayNumber": 100,
+      "UnitSymbol": "β",
+      "X": 363.62402,
+      "Y": 248.97815,
+      "Width": 80,
+      "Height": 50,
+      "RotationDeg": 0,
+      "Orientation": "Horizontal",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "B",
+          "Name": "B",
+          "RelativeX": -35,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        },
+        {
+          "Id": "C",
+          "Name": "C",
+          "RelativeX": 20,
+          "RelativeY": 35,
+          "ConnectedNetId": -1
+        },
+        {
+          "Id": "E",
+          "Name": "E",
+          "RelativeX": 20,
+          "RelativeY": -35,
+          "ConnectedNetId": -1
+        }
+      ]
+    }
+  ],
+  "Wires": [
+    {
+      "Id": "W_5120c1",
+      "StartElementId": "VCC1",
+      "StartPinName": "VCC",
+      "EndElementId": "R1",
+      "EndPinName": "1",
+      "StartX": 537.7953,
+      "StartY": 51.16091,
+      "EndX": 381.95502,
+      "EndY": 81.519966,
+      "NetId": 0,
+      "FlipCorner": false,
+      "CustomMid": 0,
+      "Waypoints": null
+    },
+    {
+      "Id": "W_fbcc4c",
+      "StartElementId": "R3",
+      "StartPinName": "1",
+      "EndElementId": "W_5120c1",
+      "EndPinName": "WireTap",
+      "StartX": 232.03003,
+      "StartY": 124.75685,
+      "EndX": 381.95502,
+      "EndY": 51.16091,
+      "NetId": 0,
+      "FlipCorner": true,
+      "CustomMid": 0,
+      "Waypoints": null
+    },
+    {
+      "Id": "W_f4cad2",
+      "StartElementId": "R3",
+      "StartPinName": "2",
+      "EndElementId": "R4",
+      "EndPinName": "1",
+      "StartX": 232.03003,
+      "StartY": 204.75685,
+      "EndX": 232.96608,
+      "EndY": 306.26453,
+      "NetId": 0,
+      "FlipCorner": true,
+      "CustomMid": 0,
+      "Waypoints": null
+    },
+    {
+      "Id": "W_353eb6",
+      "StartElementId": "R4",
+      "StartPinName": "2",
+      "EndElementId": "GND1",
+      "EndPinName": "GND",
+      "StartX": 232.96608,
+      "StartY": 386.26453,
+      "EndX": 384.1147,
+      "EndY": 511.81543,
+      "NetId": 0,
+      "FlipCorner": true,
+      "CustomMid": 0,
+      "Waypoints": null
+    },
+    {
+      "Id": "W_51f758",
+      "StartElementId": "GND1",
+      "StartPinName": "GND",
+      "EndElementId": "R2",
+      "EndPinName": "2",
+      "StartX": 384.1147,
+      "StartY": 511.81543,
+      "EndX": 380.94928,
+      "EndY": 431.6593,
+      "NetId": 0,
+      "FlipCorner": true,
+      "CustomMid": 0,
+      "Waypoints": null
+    },
+    {
+      "Id": "W_6bbffb",
+      "StartElementId": "R1",
+      "StartPinName": "2",
+      "EndElementId": "Q1",
+      "EndPinName": "E",
+      "StartX": 381.95502,
+      "StartY": 161.51996,
+      "EndX": 383.62402,
+      "EndY": 213.97815,
+      "NetId": 0,
+      "FlipCorner": true,
+      "CustomMid": 0,
+      "Waypoints": null
+    },
+    {
+      "Id": "W_284724",
+      "StartElementId": "R2",
+      "StartPinName": "1",
+      "EndElementId": "Q1",
+      "EndPinName": "C",
+      "StartX": 380.94928,
+      "StartY": 351.6593,
+      "EndX": 383.62402,
+      "EndY": 283.97815,
+      "NetId": 0,
+      "FlipCorner": true,
+      "CustomMid": 0,
+      "Waypoints": null
+    },
+    {
+      "Id": "W_f9f747",
+      "StartElementId": "Q1",
+      "StartPinName": "B",
+      "EndElementId": "W_f4cad2",
+      "EndPinName": "WireTap",
+      "StartX": 328.62402,
+      "StartY": 248.97815,
+      "EndX": 232.446,
+      "EndY": 249.86505,
+      "NetId": 0,
+      "FlipCorner": false,
+      "CustomMid": 0,
+      "Waypoints": null
+    }
+  ]
+}

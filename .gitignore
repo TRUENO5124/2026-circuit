@@ -14,6 +14,12 @@ yarn-error.log*
 ~$*.docx
 .gstack/
 
+# Local research output and one-off UI diagnostics
+/.tmp_*
+/pdf_extract_utf8.txt
+/pdf_pages/
+/tools/ui-verify/_debug/
+
 # .NET / Visual Studio / WinUI
 [Bb]in/
 [Oo]bj/

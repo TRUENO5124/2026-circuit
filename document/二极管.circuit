@@ -1,0 +1,286 @@
+{
+  "Version": "1.2.0",
+  "ProjectName": "二极管",
+  "ProjectFileName": "二极管.circuit",
+  "Description": "",
+  "CreatedAt": "2026-10-18T13:03:48.4983511+08:00",
+  "ModifiedAt": "2026-10-18T13:06:10.0664132+08:00",
+  "Parameters": {
+    "VCC": 12,
+    "Rb1": 51,
+    "Rb2": 15,
+    "Rc": 3,
+    "Re": 1,
+    "RL": 10,
+    "C1": 10,
+    "C2": 10,
+    "Ce": 47,
+    "Beta": 100,
+    "Freq": 1
+  },
+  "ParameterUnits": {
+    "VCC": "V",
+    "Rb1": "kΩ",
+    "Rb2": "kΩ",
+    "Rc": "kΩ",
+    "Re": "kΩ",
+    "RL": "kΩ",
+    "C1": "μF",
+    "C2": "μF",
+    "Ce": "μF",
+    "Freq": "kHz"
+  },
+  "IsTeachingTemplate": false,
+  "Elements": [
+    {
+      "Id": "R1",
+      "Name": "电阻器 (Resistor) R1",
+      "DefinitionId": "passive.resistor",
+      "Category": "无源器件",
+      "Description": "欧姆定律无源线性电阻，分压偏置与交流负载",
+      "Value": 0,
+      "FrequencyHz": 1000,
+      "Material": "Silicon",
+      "Type": "Resistor",
+      "DisplayNumber": 1,
+      "UnitSymbol": "kΩ",
+      "X": 215,
+      "Y": 238.66669,
+      "Width": 80,
+      "Height": 50,
+      "RotationDeg": 180,
+      "Orientation": "Horizontal",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "1",
+          "Name": "1",
+          "RelativeX": -40,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        },
+        {
+          "Id": "2",
+          "Name": "2",
+          "RelativeX": 40,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        }
+      ]
+    },
+    {
+      "Id": "D1",
+      "Name": "二极管 (Diode) D1",
+      "DefinitionId": "diode.standard",
+      "Category": "半导体管",
+      "Description": "单向导电二极管；默认硅管 VF≈0.7 V，可在参数面板切换锗管（≈0.3 V）",
+      "Value": 0,
+      "FrequencyHz": 1000,
+      "Material": "Silicon",
+      "Type": "Diode",
+      "DisplayNumber": 0.7,
+      "UnitSymbol": "V",
+      "X": 312,
+      "Y": 292.6667,
+      "Width": 80,
+      "Height": 50,
+      "RotationDeg": 90,
+      "Orientation": "Vertical",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "A",
+          "Name": "A",
+          "RelativeX": -35,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        },
+        {
+          "Id": "K",
+          "Name": "K",
+          "RelativeX": 35,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        }
+      ]
+    },
+    {
+      "Id": "GND1",
+      "Name": "参考地 (GND) GND1",
+      "DefinitionId": "reference.ground",
+      "Category": "参考地",
+      "Description": "基准零电位参考节点，统一电路地电位基准",
+      "Value": 0,
+      "FrequencyHz": 1000,
+      "Material": "Silicon",
+      "Type": "Ground",
+      "DisplayNumber": 0,
+      "UnitSymbol": "V",
+      "X": 314,
+      "Y": 534.6667,
+      "Width": 80,
+      "Height": 50,
+      "RotationDeg": 0,
+      "Orientation": "Horizontal",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "GND",
+          "Name": "GND",
+          "RelativeX": 0,
+          "RelativeY": -22,
+          "ConnectedNetId": -1
+        }
+      ]
+    },
+    {
+      "Id": "VCC2",
+      "Name": "直流电源 (VCC) VCC2",
+      "DefinitionId": "source.vcc",
+      "Category": "激励电源",
+      "Description": "恒定偏置直流供电电源 (VCC)，提供电路正向工作偏压",
+      "Value": 0,
+      "FrequencyHz": 1000,
+      "Material": "Silicon",
+      "Type": "DcVoltageSource",
+      "DisplayNumber": 12,
+      "UnitSymbol": "V",
+      "X": 309.3333,
+      "Y": 404,
+      "Width": 80,
+      "Height": 50,
+      "RotationDeg": 0,
+      "Orientation": "Horizontal",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "pos",
+          "Name": "pos",
+          "RelativeX": 0,
+          "RelativeY": -35,
+          "ConnectedNetId": -1
+        },
+        {
+          "Id": "neg",
+          "Name": "neg",
+          "RelativeX": 0,
+          "RelativeY": 35,
+          "ConnectedNetId": -1
+        }
+      ]
+    },
+    {
+      "Id": "VS1",
+      "Name": "交流小信号源 (vs) VS1",
+      "DefinitionId": "source.v_ac_small_signal",
+      "Category": "激励电源",
+      "Description": "正弦交流微变等效激励，用于动态放大指标推导",
+      "Value": 0,
+      "FrequencyHz": 1000,
+      "Material": "Silicon",
+      "Type": "AcVoltageSource",
+      "DisplayNumber": 10,
+      "UnitSymbol": "mV",
+      "X": 95.15303,
+      "Y": 369.74615,
+      "Width": 80,
+      "Height": 50,
+      "RotationDeg": 0,
+      "Orientation": "Horizontal",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "pos",
+          "Name": "pos",
+          "RelativeX": 0,
+          "RelativeY": -35,
+          "ConnectedNetId": -1
+        },
+        {
+          "Id": "neg",
+          "Name": "neg",
+          "RelativeX": 0,
+          "RelativeY": 35,
+          "ConnectedNetId": -1
+        }
+      ]
+    }
+  ],
+  "Wires": [
+    {
+      "Id": "W_e4f928",
+      "StartElementId": "GND1",
+      "StartPinName": "GND",
+      "EndElementId": "VCC2",
+      "EndPinName": "neg",
+      "StartX": 314,
+      "StartY": 512.6667,
+      "EndX": 309.3333,
+      "EndY": 439,
+      "NetId": 0,
+      "FlipCorner": true,
+      "CustomMid": 0,
+      "Waypoints": null
+    },
+    {
+      "Id": "W_5e0a70",
+      "StartElementId": "VCC2",
+      "StartPinName": "pos",
+      "EndElementId": "D1",
+      "EndPinName": "K",
+      "StartX": 309.3333,
+      "StartY": 369,
+      "EndX": 312,
+      "EndY": 327.6667,
+      "NetId": 0,
+      "FlipCorner": true,
+      "CustomMid": 0,
+      "Waypoints": null
+    },
+    {
+      "Id": "W_81d476",
+      "StartElementId": "D1",
+      "StartPinName": "A",
+      "EndElementId": "R1",
+      "EndPinName": "1",
+      "StartX": 312,
+      "StartY": 257.6667,
+      "EndX": 255,
+      "EndY": 238.66669,
+      "NetId": 0,
+      "FlipCorner": true,
+      "CustomMid": 0,
+      "Waypoints": null
+    },
+    {
+      "Id": "W_ec307d",
+      "StartElementId": "VS1",
+      "StartPinName": "pos",
+      "EndElementId": "R1",
+      "EndPinName": "2",
+      "StartX": 95.15303,
+      "StartY": 334.74615,
+      "EndX": 175,
+      "EndY": 238.66669,
+      "NetId": 0,
+      "FlipCorner": true,
+      "CustomMid": 0,
+      "Waypoints": null
+    },
+    {
+      "Id": "W_8e681f",
+      "StartElementId": "VS1",
+      "StartPinName": "neg",
+      "EndElementId": "GND1",
+      "EndPinName": "GND",
+      "StartX": 95.15303,
+      "StartY": 404.74615,
+      "EndX": 314,
+      "EndY": 512.6667,
+      "NetId": 0,
+      "FlipCorner": true,
+      "CustomMid": 0,
+      "Waypoints": null
+    }
+  ]
+}

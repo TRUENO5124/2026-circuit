@@ -1,17 +1,5 @@
 namespace CircuitAssistant.Models;
 
-public enum UnitPrefix
-{
-    Pico,
-    Nano,
-    Micro,
-    Milli,
-    None,
-    Kilo,
-    Mega,
-    Giga
-}
-
 public class UnitOption
 {
     public string Symbol { get; set; } = string.Empty;

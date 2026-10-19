@@ -663,7 +663,10 @@ class Program
             // Check step 1 calculates Ibq, Icq, Vceq in LatexFormula + SubstitutionFormula
             var step1 = solution.Steps[0];
             string step1Full = $"{step1.LatexFormula} {step1.SubstitutionFormula} {step1.ResultValue}";
-            Assert(step1Full.Contains("I_{BQ}") && step1Full.Contains("I_{CQ}") && step1Full.Contains("V_{CEQ}"),
+            // 教材估算法（用户口径 2026-10-18）：Q 点电压符号在教材手算中写作 U_CEQ，
+            // 公式仍完整保留 I_BQ / I_CQ / U_CEQ 三项推导（不做代数化简）。
+            Assert(step1Full.Contains("I_{BQ}") && step1Full.Contains("I_{CQ}") &&
+                   (step1Full.Contains("U_{CEQ}") || step1Full.Contains("V_{CEQ}")),
                 "5.6.4 Step 1 contains rigorous Q-point DC derivation formulas");
 
             // Check step 2 calculates rbe

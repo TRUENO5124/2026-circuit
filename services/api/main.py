@@ -24,6 +24,8 @@ if str(_PROJECT_ROOT) not in sys.path:
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
+from urllib.parse import quote
 
 from .config import config
 from .models import HealthResponse
@@ -82,10 +84,10 @@ def health() -> HealthResponse:
 
 # ── Capture page (simple HTML served for phone browsers) ────────
 
-@app.get("/capture/{session_id}")
+@app.get("/capture/{session_id}", response_class=HTMLResponse)
 def capture_page(session_id: str, token: str = ""):
     """Serve a minimal HTML page for phone-based upload."""
-    return _CAPTURE_HTML.replace("{{SESSION_ID}}", session_id).replace("{{TOKEN}}", token)
+    return _CAPTURE_HTML.replace("{{SESSION_ID}}", quote(session_id, safe="")).replace("{{TOKEN}}", quote(token, safe=""))
 
 
 _CAPTURE_HTML = """<!DOCTYPE html>

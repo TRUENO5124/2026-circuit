@@ -1,0 +1,48 @@
+﻿{
+    "phase":  "after",
+    "exe":  "D:\\BJTU\\2026年大创\\apps\\desktop-winui\\bin\\_verify\\CircuitAssistant.exe",
+    "exeLastWriteTime":  "2026-10-18T17:14:02.1456094+08:00",
+    "capturedAt":  "2026-10-18T17:18:48.0201543+08:00",
+    "screenshots":  [
+                        {
+                            "name":  "01_welcome",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\after\\01_welcome.png",
+                            "note":  "blank workspace welcome page"
+                        },
+                        {
+                            "name":  "02_template_loaded",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\after\\02_template_loaded.png",
+                            "note":  "voltage-divider common-emitter template loaded"
+                        },
+                        {
+                            "name":  "03_ce_derivation_full",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\after\\03_ce_derivation_full.png",
+                            "note":  "CE derivation tab after solve (full window)"
+                        },
+                        {
+                            "name":  "04_ce_derivation_panel",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\after\\04_ce_derivation_panel.png",
+                            "note":  "right panel derivation region region=(1932,309,642x1229) hits=anchor=依据当前电路类型与模型假设生成教学推导：@(1982,399,549x15)"
+                        },
+                        {
+                            "name":  "05_ce_formula_region",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\after\\05_ce_formula_region.png",
+                            "note":  "formula boxes (subscript/clipping) region region=(1258,230,654x876) hits=anchor=fallback(no anchor text found)"
+                        },
+                        {
+                            "name":  "06_ce_metrics_full",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\after\\06_ce_metrics_full.png",
+                            "note":  "CE metrics tab (Q point + AC)"
+                        },
+                        {
+                            "name":  "07_ce_qpoint_region",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\after\\07_ce_qpoint_region.png",
+                            "note":  "CE Q point card region region=(1317,398,291x243) hits=直流静态工作点@(1372,413,226x26); 基极静态电流@(1342,454,165x26); 集电极电流@(1342,492,165x26); 管压降@(1342,530,165x26)"
+                        },
+                        {
+                            "name":  "07b_ce_derivation_drawer",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\after\\07b_ce_derivation_drawer.png",
+                            "note":  "CE bottom derivation drawer opened"
+                        }
+                    ]
+}

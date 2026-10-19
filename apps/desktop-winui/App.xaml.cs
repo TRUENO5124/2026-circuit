@@ -85,6 +85,7 @@ public partial class App : Application
         {
             LogTrace("OnLaunched: Starting");
             Window = new MainWindow();
+            CircuitAssistant.Services.ProjectManagerService.WindowHandleProvider = () => WindowHandle;
             LogTrace($"OnLaunched: MainWindow created, HWND={WindowHandle}");
             DispatcherQueue = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
             LogTrace("OnLaunched: DispatcherQueue obtained");

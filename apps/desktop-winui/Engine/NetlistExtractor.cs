@@ -109,41 +109,20 @@ public static class NetlistExtractor
     /// </summary>
     public static double ConvertToBaseSi(ElementType type, double value, string unitSymbol)
     {
-        string u = unitSymbol?.Trim() ?? string.Empty;
-        switch (type)
+        string unit = (unitSymbol ?? "").Trim().Replace("uF", "μF").Replace("uH", "μH").Replace("uA", "μA");
+        var options = type switch
         {
-            case ElementType.Resistor:
-                if (u.StartsWith("MΩ", StringComparison.OrdinalIgnoreCase)) return value * 1e6;
-                if (u.StartsWith("kΩ", StringComparison.OrdinalIgnoreCase) || u.StartsWith("KΩ", StringComparison.OrdinalIgnoreCase)) return value * 1e3;
-                return value; // Ω
-
-            case ElementType.Capacitor:
-                if (u.StartsWith("μF", StringComparison.OrdinalIgnoreCase) || u.StartsWith("uF", StringComparison.OrdinalIgnoreCase)) return value * 1e-6;
-                if (u.StartsWith("nF", StringComparison.OrdinalIgnoreCase)) return value * 1e-9;
-                if (u.StartsWith("pF", StringComparison.OrdinalIgnoreCase)) return value * 1e-12;
-                if (u.StartsWith("mF", StringComparison.OrdinalIgnoreCase)) return value * 1e-3;
-                return value; // F
-
-            case ElementType.Inductor:
-                if (u.StartsWith("mH", StringComparison.OrdinalIgnoreCase)) return value * 1e-3;
-                if (u.StartsWith("μH", StringComparison.OrdinalIgnoreCase) || u.StartsWith("uH", StringComparison.OrdinalIgnoreCase)) return value * 1e-6;
-                return value; // H
-
-            case ElementType.DcVoltageSource:
-            case ElementType.AcVoltageSource:
-                if (u.StartsWith("mV", StringComparison.OrdinalIgnoreCase)) return value * 1e-3;
-                if (u.StartsWith("kV", StringComparison.OrdinalIgnoreCase)) return value * 1e3;
-                return value; // V
-
-            case ElementType.DcCurrentSource:
-            case ElementType.AcCurrentSource:
-                if (u.StartsWith("mA", StringComparison.OrdinalIgnoreCase)) return value * 1e-3;
-                if (u.StartsWith("μA", StringComparison.OrdinalIgnoreCase) || u.StartsWith("uA", StringComparison.OrdinalIgnoreCase)) return value * 1e-6;
-                return value; // A
-
-            default:
-                return value;
-        }
+            ElementType.Resistor => EngineeringUnits.ResistanceUnits,
+            ElementType.Capacitor or ElementType.CapacitorPolarized => EngineeringUnits.CapacitanceUnits,
+            ElementType.Inductor => EngineeringUnits.InductanceUnits,
+            ElementType.DcVoltageSource or ElementType.AcVoltageSource or ElementType.VccPort => EngineeringUnits.VoltageUnits,
+            ElementType.DcCurrentSource or ElementType.AcCurrentSource => EngineeringUnits.CurrentUnits,
+            _ => Array.Empty<UnitOption>()
+        };
+        if (options.Length == 0) return value;
+        var option = options.FirstOrDefault(o => o.Symbol.Equals(unit, StringComparison.Ordinal));
+        if (option == null) throw new ArgumentException($"单位 '{unitSymbol}' 不适用于 {type}。");
+        return value * option.Multiplier;
     }
 
     /// <summary>
@@ -298,6 +277,7 @@ public static class NetlistExtractor
             string pinKey = $"PIN:{elId}.{pinId}";
             var element = elementList.FirstOrDefault(e => e.Id == elId);
             bool isGround = element != null && element.Type == ElementType.Ground;
+            bool isVcc = element != null && element.Type == ElementType.VccPort;
 
             foreach (var w in wireList)
             {
@@ -327,9 +307,9 @@ public static class NetlistExtractor
                     continue;
                 }
 
-                // B) Pin resting directly on wire segment (e.g. GND symbol on rail, or unconnected pin on rail)
+                // B) Pin resting directly on wire segment (e.g. GND/VCC symbol on rail, or unconnected pin on rail)
                 bool isRailOrBus = w.Id.Contains("_RAIL") || w.Id.Contains("_BUS");
-                if ((isGround || (isRailOrBus && !pinsWithExplicitWires.Contains(pinKey))) &&
+                if ((isGround || isVcc || (isRailOrBus && !pinsWithExplicitWires.Contains(pinKey))) &&
                     wireSegments.TryGetValue(w.Id, out var segs))
                 {
                     foreach (var (sa, sb) in segs)
@@ -496,7 +476,8 @@ public static class NetlistExtractor
             var pins = net.ConnectedPins;
 
             // Semantic net naming heuristics
-            if (pins.Any(p => p.PinId == "pos" && netlist.Elements.TryGetValue(p.ElementId, out var el) && el.Type == ElementType.DcVoltageSource))
+            if (pins.Any(p => (p.PinId == "pos" && netlist.Elements.TryGetValue(p.ElementId, out var el) && el.Type == ElementType.DcVoltageSource)
+                           || (netlist.Elements.TryGetValue(p.ElementId, out var elVcc) && elVcc.Type == ElementType.VccPort)))
             {
                 net.Name = "VCC";
                 net.IsPower = true;
@@ -623,6 +604,11 @@ public static class NetlistExtractor
 
             if (posNode != null && negNode != null)
             {
+                // Connectivity extraction must also work on an unfinished drawing.
+                // Validate reports the bad unit before a solver can consume this value.
+                double valueSi;
+                try { valueSi = ConvertToBaseSi(el.Type, el.DisplayNumber, el.UnitSymbol); }
+                catch (ArgumentException) { valueSi = double.NaN; }
                 var branch = new ElectricalBranch
                 {
                     BranchId = $"B_{el.Id}",
@@ -631,7 +617,7 @@ public static class NetlistExtractor
                     NegativeNode = negNode,
                     PositivePin = new ComponentPinRef(el.Id, pPinId, pPinId),
                     NegativePin = new ComponentPinRef(el.Id, nPinId, nPinId),
-                    ValueSI = ConvertToBaseSi(el.Type, el.DisplayNumber, el.UnitSymbol)
+                    ValueSI = valueSi
                 };
                 netlist.Branches.Add(branch);
                 posNode.ConnectedBranches.Add(branch);

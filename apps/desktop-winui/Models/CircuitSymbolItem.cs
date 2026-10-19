@@ -12,5 +12,6 @@ public class CircuitSymbolItem
     public string Standard { get; set; } = "IEC / ANSI";
     public double DefaultNumber { get; set; } = 1.0;
     public string DefaultUnit { get; set; } = "";
+    public SemiconductorMaterial DefaultMaterial { get; set; } = SemiconductorMaterial.Silicon;
     public ElementType ElementType { get; set; } = ElementType.Resistor;
 }

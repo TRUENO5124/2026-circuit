@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0-windows10.0.26100.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <NoWarn>MVVMTK0045</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+  </ItemGroup>
+
+  <!-- 元件符号几何库校验（task-6）：显式链接生产源码，非 dotnet test 工程，
+       用 dotnet run（project tests/SymbolChecks/SymbolChecks.csproj）运行。
+       与 tests/EngineV2Checks 等控制台 harness 采用同一模式。 -->
+  <ItemGroup>
+    <Compile Include="..\..\apps\desktop-winui\Models\CircuitElement.cs" Link="Models\CircuitElement.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Models\CircuitProjectData.cs" Link="Models\CircuitProjectData.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Models\CircuitWireSync.cs" Link="Models\CircuitWireSync.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Models\EngineeringUnit.cs" Link="Models\EngineeringUnit.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Models\SymbolGeometry.cs" Link="Models\SymbolGeometry.cs" />
+  </ItemGroup>
+</Project>

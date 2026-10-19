@@ -17,7 +17,7 @@ using CircuitAssistant.Services;
 
 namespace M2SolverChallenger;
 
-class Program
+partial class Program
 {
     private static readonly List<string> Failures = new();
     private static int TotalTests = 0;
@@ -36,6 +36,32 @@ class Program
         netlist.Nets.Add(net);
         return net;
     }
+
+    // Hand-built fixtures must supply the same graph layers as the production extractor.
+    private static ElectricalNetlist CompleteGraph(ElectricalNetlist netlist)
+    {
+        if (netlist.Nodes.Count > 0) return netlist;
+        foreach (var net in netlist.Nets)
+            netlist.Nodes.Add(new ElectricalNode { Index = net.NetId, Name = net.Name, Net = net });
+        foreach (var el in netlist.Elements.Values.Where(el => el.Pins.Count == 2))
+        {
+            var first = netlist.FindNodeForPin(el.Id, el.Pins[0].Id);
+            var second = netlist.FindNodeForPin(el.Id, el.Pins[1].Id);
+            if (first == null || second == null) continue;
+            var branch = new ElectricalBranch
+            {
+                BranchId = $"B_{el.Id}", Element = el, PositiveNode = first, NegativeNode = second,
+                ValueSI = NetlistExtractor.ConvertToBaseSi(el.Type, el.DisplayNumber, el.UnitSymbol)
+            };
+            netlist.Branches.Add(branch);
+            first.ConnectedBranches.Add(branch);
+            second.ConnectedBranches.Add(branch);
+        }
+        return netlist;
+    }
+
+    private static CircuitTopologyType ClassifyComplete(ElectricalNetlist netlist, out ICircuitStrategy strategy) =>
+        TopologyClassifier.Classify(CompleteGraph(netlist), out strategy);
 
     private static void Assert(bool condition, string testName, string errorDetails)
     {
@@ -92,7 +118,7 @@ class Program
         {
             var rcTemplate = CircuitTemplateFactory.CreateRcTransientTemplate();
             var netlist = NetlistExtractor.ExtractNetlist(rcTemplate.Elements, rcTemplate.Wires);
-            var topology = TopologyClassifier.Classify(netlist, out var strategy);
+            var topology = ClassifyComplete(netlist, out var strategy);
 
             Assert(topology == CircuitTopologyType.FirstOrderRc, "1.1.1 RC Template Classification",
                 $"Expected FirstOrderRc, got {topology}");
@@ -202,7 +228,7 @@ class Program
             net2.ConnectedPins.Add(new ComponentPinRef("R1", "2", "2"));
             net2.ConnectedPins.Add(new ComponentPinRef("C1", "1", "1"));
 
-            var topology = TopologyClassifier.Classify(netlist, out var strategy);
+            var topology = ClassifyComplete(netlist, out var strategy);
             Assert(topology == CircuitTopologyType.FirstOrderRc, "1.2.1 Custom RC Classification", $"Got {topology}");
 
             var solution = await strategy.SolveAsync(netlist, parameters);
@@ -259,14 +285,18 @@ class Program
             net2.ConnectedPins.Add(new ComponentPinRef("R1", "2", "2"));
             net2.ConnectedPins.Add(new ComponentPinRef("L1", "1", "1"));
 
-            var topology = TopologyClassifier.Classify(netlist, out var strategy);
+            var topology = ClassifyComplete(netlist, out var strategy);
             Assert(topology == CircuitTopologyType.FirstOrderRl, "1.3.1 RL Classification", $"Expected FirstOrderRl, got {topology}");
 
             var solution = await strategy.SolveAsync(netlist, parameters);
             Assert(solution.IsSuccess, "1.3.2 RL Solving", "Solver failed");
             Assert(solution.Steps.Any(s => s.LatexFormula.Contains("i_L(t)")), "1.3.3 RL Formula Contains i_L(t)", "Missing i_L(t)");
 
-            Assert(solution.SummaryText.Contains("RL") && (solution.SummaryText.Contains("0.1") || solution.SummaryText.Contains("1.00")),
+            // Display convention (2026-10-18): τ is shown with a textbook unit and at
+            // most two decimals: τ = 0.1 ms = 100 μs, fc = 1591.55 Hz → 1.59 kHz.
+            Assert(solution.SummaryText.Contains("RL") &&
+                   solution.SummaryText.Contains("τ = 100 μs") &&
+                   solution.SummaryText.Contains("fc = 1.59 kHz"),
                 "1.3.4 RL Summary Metric Text", $"Summary: {solution.SummaryText}");
         }
 
@@ -279,9 +309,9 @@ class Program
         ElectricalNetlist CreateRlcNetlist(double rVal, string rUnit, double lVal, string lUnit, double cVal, string cUnit, bool isParallel = false)
         {
             var net = new ElectricalNetlist();
-            var src = new CircuitElement { Id = "VS", Name = "VS", Type = ElementType.DcVoltageSource, DisplayNumber = 10.0, UnitSymbol = "V" };
-            src.Pins.Add(new CircuitPin { Id = "pos", Name = "pos" });
-            src.Pins.Add(new CircuitPin { Id = "neg", Name = "neg" });
+            var src = new CircuitElement { Id = "VS", Name = "VS", Type = isParallel ? ElementType.DcCurrentSource : ElementType.DcVoltageSource, DisplayNumber = 10.0, UnitSymbol = isParallel ? "mA" : "V" };
+            src.Pins.Add(new CircuitPin { Id = isParallel ? "in" : "pos", Name = isParallel ? "in" : "pos" });
+            src.Pins.Add(new CircuitPin { Id = isParallel ? "out" : "neg", Name = isParallel ? "out" : "neg" });
 
             var res = new CircuitElement { Id = "R1", Name = "R1", Type = ElementType.Resistor, DisplayNumber = rVal, UnitSymbol = rUnit };
             res.Pins.Add(new CircuitPin { Id = "1", Name = "1" });
@@ -305,7 +335,7 @@ class Program
             AddElement(net, gnd);
 
             var netGnd = GetOrCreateNet(net, 0, "GND", isGround: true);
-            netGnd.ConnectedPins.Add(new ComponentPinRef("VS", "neg", "neg"));
+            netGnd.ConnectedPins.Add(new ComponentPinRef("VS", isParallel ? "out" : "neg", isParallel ? "out" : "neg"));
             netGnd.ConnectedPins.Add(new ComponentPinRef("GND", "GND", "GND"));
 
             if (!isParallel)
@@ -327,18 +357,14 @@ class Program
             }
             else
             {
-                // Parallel RLC: L1 and C1 in parallel between N1 and GND
+                // True parallel RLC, with an independent current source across the same pair.
                 var n1 = GetOrCreateNet(net, 1, "N1");
-                n1.ConnectedPins.Add(new ComponentPinRef("VS", "pos", "pos"));
-                n1.ConnectedPins.Add(new ComponentPinRef("R1", "1", "1"));
-
-                var n2 = GetOrCreateNet(net, 2, "N2");
-                n2.ConnectedPins.Add(new ComponentPinRef("R1", "2", "2"));
-                n2.ConnectedPins.Add(new ComponentPinRef("L1", "1", "1"));
-                n2.ConnectedPins.Add(new ComponentPinRef("C1", "1", "1"));
-
-                netGnd.ConnectedPins.Add(new ComponentPinRef("L1", "2", "2"));
-                netGnd.ConnectedPins.Add(new ComponentPinRef("C1", "2", "2"));
+                n1.ConnectedPins.Add(new ComponentPinRef("VS", "in", "in"));
+                foreach (var id in new[] { "R1", "L1", "C1" })
+                {
+                    n1.ConnectedPins.Add(new ComponentPinRef(id, "1", "1"));
+                    netGnd.ConnectedPins.Add(new ComponentPinRef(id, "2", "2"));
+                }
             }
 
             return net;
@@ -348,7 +374,7 @@ class Program
         // omega0 = 10000 rad/s, alpha = R/(2L) = 300 / 0.02 = 15000 s^-1 > 10000 => Overdamped
         {
             var rlcNet = CreateRlcNetlist(300.0, "Ω", 10.0, "mH", 1.0, "μF", isParallel: false);
-            var top = TopologyClassifier.Classify(rlcNet, out var strategy);
+            var top = ClassifyComplete(rlcNet, out var strategy);
             Assert(top == CircuitTopologyType.SecondOrderRlc, "2.1.1 Overdamped Classification", $"Got {top}");
 
             var solution = await strategy.SolveAsync(rlcNet, parameters);
@@ -367,7 +393,7 @@ class Program
         // Rcrit = 2*sqrt(L/C) = 2*sqrt(0.01 / 1e-6) = 200 Ohm => alpha = 200 / 0.02 = 10000 = omega0
         {
             var rlcNet = CreateRlcNetlist(200.0, "Ω", 10.0, "mH", 1.0, "μF", isParallel: false);
-            TopologyClassifier.Classify(rlcNet, out var strategy);
+            ClassifyComplete(rlcNet, out var strategy);
             var solution = await strategy.SolveAsync(rlcNet, parameters);
 
             Assert(solution.SummaryText.Contains("临界阻尼"), "2.2.1 Critically Damped Regime Detection",
@@ -382,7 +408,7 @@ class Program
         // alpha = 50 / 0.02 = 2500 < 10000 => omega_d = sqrt(10000^2 - 2500^2) = 9682.46 rad/s
         {
             var rlcNet = CreateRlcNetlist(50.0, "Ω", 10.0, "mH", 1.0, "μF", isParallel: false);
-            TopologyClassifier.Classify(rlcNet, out var strategy);
+            ClassifyComplete(rlcNet, out var strategy);
             var solution = await strategy.SolveAsync(rlcNet, parameters);
 
             Assert(solution.SummaryText.Contains("欠阻尼"), "2.3.1 Underdamped Regime Detection",
@@ -393,7 +419,8 @@ class Program
                 "2.3.2 Underdamped Complex Conjugate Roots", $"Roots: {step3.SubstitutionFormula}");
 
             // Quality factor Q = omega0 / (2*alpha) = 10000 / 5000 = 2.0
-            Assert(solution.SummaryText.Contains("2.00"), "2.3.3 Underdamped Q Factor = 2.00",
+            // (display convention: at most two decimals → "Q = 2", trailing zeros trimmed)
+            Assert(solution.SummaryText.Contains("品质因数 Q = 2"), "2.3.3 Underdamped Q Factor = 2",
                 $"SummaryText Q: {solution.SummaryText}");
         }
 
@@ -402,12 +429,13 @@ class Program
         // Q = R*sqrt(C/L) = 1000 * sqrt(1e-6 / 0.01) = 1000 * 0.01 = 10.0
         {
             var rlcNet = CreateRlcNetlist(1.0, "kΩ", 10.0, "mH", 1.0, "μF", isParallel: true);
-            var top = TopologyClassifier.Classify(rlcNet, out var strategy);
+            var top = ClassifyComplete(rlcNet, out var strategy);
             Assert(strategy.SubtypeName == "ParallelRlc", "2.4.1 Parallel RLC Subtype Detection",
                 $"Expected ParallelRlc, got {strategy.SubtypeName}");
 
             var solution = await strategy.SolveAsync(rlcNet, parameters);
-            Assert(solution.SummaryText.Contains("10.00"), "2.4.2 Parallel RLC Q Factor = 10.00",
+            // Display convention: Q = 10.0 is rendered as "Q = 10".
+            Assert(solution.SummaryText.Contains("品质因数 Q = 10"), "2.4.2 Parallel RLC Q Factor = 10",
                 $"SummaryText Q: {solution.SummaryText}");
         }
 
@@ -420,7 +448,7 @@ class Program
         {
             var ceTemplate = CircuitTemplateFactory.CreateCommonEmitterTemplate();
             var netlist = NetlistExtractor.ExtractNetlist(ceTemplate.Elements, ceTemplate.Wires);
-            var top = TopologyClassifier.Classify(netlist, out var strategy);
+            var top = ClassifyComplete(netlist, out var strategy);
 
             Assert(top == CircuitTopologyType.BjtAmplifier, "3.1.1 CE Template Classification", $"Got {top}");
             Assert(strategy.SubtypeName == "VoltageDividerSelfBias", "3.1.2 Bias Subtype VoltageDividerSelfBias",
@@ -431,16 +459,21 @@ class Program
             Assert(solution.Steps.Count == 5, "3.1.4 CE 5 Pedagogical Steps", $"Expected 5, got {solution.Steps.Count}");
 
             Assert(solution.QPoint != null, "3.1.5 QPoint Populated", "QPoint is null");
-            Assert(solution.QPoint.Ibq.Contains("18.0"), "3.1.6 IBQ ~ 18.0 uA", $"Got IBQ = '{solution.QPoint.Ibq}'");
-            Assert(solution.QPoint.Icq.Contains("1.8"), "3.1.7 ICQ ~ 1.8 mA", $"Got ICQ = '{solution.QPoint.Icq}'");
-            Assert(solution.QPoint.Vceq.Contains("4.78") || solution.QPoint.Vceq.Contains("4.8"), "3.1.8 VCEQ ~ 4.78 V",
+            // 教材估算法（用户口径 2026-10-18）：U_B 空载分压先舍入两位 → I_EQ → I_BQ → I_CQ，
+            // 因此 Q 点显示为 20.1 μA / 2.01 mA / 3.94 V（与精确戴维南解有可见差异）。
+            Assert(solution.QPoint.Ibq.Contains("20.1"), "3.1.6 IBQ ≈ 20.1 uA（教材估算法）", $"Got IBQ = '{solution.QPoint.Ibq}'");
+            Assert(solution.QPoint.Icq.Contains("2.01"), "3.1.7 ICQ ≈ 2.01 mA（教材估算法）", $"Got ICQ = '{solution.QPoint.Icq}'");
+            Assert(solution.QPoint.Vceq.Contains("3.94"), "3.1.8 VCEQ ≈ 3.94 V（教材估算法）",
                 $"Got VCEQ = '{solution.QPoint.Vceq}'");
             Assert(solution.QPoint.IsActiveRegion, "3.1.9 BJT In Active Region", "IsActiveRegion is false");
 
-            Assert(solution.AcParameters.VoltageGain.Contains("-139"), "3.1.10 Voltage Gain Av ~ -139",
-                $"Got Av = '{solution.AcParameters.VoltageGain}'");
-            Assert(solution.AcParameters.InputResistance.Contains("1.45") || solution.AcParameters.InputResistance.Contains("1.5"),
-                "3.1.11 Input Resistance Ri ~ 1.45 kΩ", $"Got Ri = '{solution.AcParameters.InputResistance}'");
+            // AC 链：rbe=200+(1+β)U_T/I_EQ 使用舍入后的 I_EQ，Av/Ri 再按显示单位舍入两位。
+            double actualGain = double.Parse(solution.AcParameters.VoltageGain, System.Globalization.CultureInfo.InvariantCulture);
+            double actualRin = double.Parse(solution.AcParameters.InputResistance.Split(' ')[0], System.Globalization.CultureInfo.InvariantCulture) * 1000;
+            Assert(Math.Abs(actualGain - (-155.03)) < 0.01,
+                "3.1.10 CE gain uses emitter-current small-signal resistance", solution.AcParameters.VoltageGain);
+            Assert(Math.Abs(actualRin - 1320) < 6,
+                "3.1.11 CE input resistance numeric tolerance", solution.AcParameters.InputResistance);
             Assert(solution.AcParameters.OutputResistance.Contains("3.0") || solution.AcParameters.OutputResistance.Contains("3"),
                 "3.1.12 Output Resistance Ro = 3.0 kΩ", $"Got Ro = '{solution.AcParameters.OutputResistance}'");
         }
@@ -496,7 +529,7 @@ class Program
             netGnd.ConnectedPins.Add(new ComponentPinRef("Q1", "E", "E"));
             netGnd.ConnectedPins.Add(new ComponentPinRef("GND", "GND", "GND"));
 
-            var top = TopologyClassifier.Classify(netlist, out var strategy);
+            var top = ClassifyComplete(netlist, out var strategy);
             Assert(top == CircuitTopologyType.BjtAmplifier, "3.2.1 Fixed Bias Classification", $"Got {top}");
             Assert(strategy.SubtypeName == "FixedBias", "3.2.2 FixedBias Subtype Detected", $"Got {strategy.SubtypeName}");
 
@@ -505,6 +538,237 @@ class Program
                 "3.2.3 Fixed Bias IBQ ~ 37.7 uA", $"Got IBQ = '{solution.QPoint.Ibq}'");
             Assert(solution.QPoint.Icq.Contains("3.77") || solution.QPoint.Icq.Contains("3.76"),
                 "3.2.4 Fixed Bias ICQ ~ 3.77 mA", $"Got ICQ = '{solution.QPoint.Icq}'");
+        }
+
+        // Test 3.3: Question 13 Common-Base BJT Amplifier Verification (Arbitrary IDs R1..R5, C1..C3, V1, Q1)
+        {
+            var netlist = new ElectricalNetlist();
+
+            // Q1: BJT beta=50, rbb'=50
+            var q1 = new CircuitElement { Id = "Q1", Name = "Q1", Type = ElementType.BjtNpn, DisplayNumber = 50.0, UnitSymbol = "β" };
+            q1.Pins.Add(new CircuitPin { Id = "B", Name = "B" });
+            q1.Pins.Add(new CircuitPin { Id = "C", Name = "C" });
+            q1.Pins.Add(new CircuitPin { Id = "E", Name = "E" });
+
+            // V1: 12V DC power
+            var v1 = new CircuitElement { Id = "V1", Name = "V1", Type = ElementType.DcVoltageSource, DisplayNumber = 12.0, UnitSymbol = "V" };
+            v1.Pins.Add(new CircuitPin { Id = "pos", Name = "pos" });
+            v1.Pins.Add(new CircuitPin { Id = "neg", Name = "neg" });
+
+            // R1: 30k (Rb1)
+            var r1 = new CircuitElement { Id = "R1", Name = "R1", Type = ElementType.Resistor, DisplayNumber = 30.0, UnitSymbol = "kΩ" };
+            r1.Pins.Add(new CircuitPin { Id = "1", Name = "1" });
+            r1.Pins.Add(new CircuitPin { Id = "2", Name = "2" });
+
+            // R2: 15k (Rb2)
+            var r2 = new CircuitElement { Id = "R2", Name = "R2", Type = ElementType.Resistor, DisplayNumber = 15.0, UnitSymbol = "kΩ" };
+            r2.Pins.Add(new CircuitPin { Id = "1", Name = "1" });
+            r2.Pins.Add(new CircuitPin { Id = "2", Name = "2" });
+
+            // R3: 3k (Rc)
+            var r3 = new CircuitElement { Id = "R3", Name = "R3", Type = ElementType.Resistor, DisplayNumber = 3.0, UnitSymbol = "kΩ" };
+            r3.Pins.Add(new CircuitPin { Id = "1", Name = "1" });
+            r3.Pins.Add(new CircuitPin { Id = "2", Name = "2" });
+
+            // R4: 2k (Re)
+            var r4 = new CircuitElement { Id = "R4", Name = "R4", Type = ElementType.Resistor, DisplayNumber = 2.0, UnitSymbol = "kΩ" };
+            r4.Pins.Add(new CircuitPin { Id = "1", Name = "1" });
+            r4.Pins.Add(new CircuitPin { Id = "2", Name = "2" });
+
+            // R5: 3k (RL)
+            var r5 = new CircuitElement { Id = "R5", Name = "R5", Type = ElementType.Resistor, DisplayNumber = 3.0, UnitSymbol = "kΩ" };
+            r5.Pins.Add(new CircuitPin { Id = "1", Name = "1" });
+            r5.Pins.Add(new CircuitPin { Id = "2", Name = "2" });
+
+            // C1: 10uF (Co output coupling)
+            var c1 = new CircuitElement { Id = "C1", Name = "C1", Type = ElementType.Capacitor, DisplayNumber = 10.0, UnitSymbol = "μF" };
+            c1.Pins.Add(new CircuitPin { Id = "1", Name = "1" });
+            c1.Pins.Add(new CircuitPin { Id = "2", Name = "2" });
+
+            // C2: 10uF (Cb base bypass)
+            var c2 = new CircuitElement { Id = "C2", Name = "C2", Type = ElementType.Capacitor, DisplayNumber = 10.0, UnitSymbol = "μF" };
+            c2.Pins.Add(new CircuitPin { Id = "1", Name = "1" });
+            c2.Pins.Add(new CircuitPin { Id = "2", Name = "2" });
+
+            // C3: 10uF (Ci input coupling)
+            var c3 = new CircuitElement { Id = "C3", Name = "C3", Type = ElementType.Capacitor, DisplayNumber = 10.0, UnitSymbol = "μF" };
+            c3.Pins.Add(new CircuitPin { Id = "1", Name = "1" });
+            c3.Pins.Add(new CircuitPin { Id = "2", Name = "2" });
+
+            // GND
+            var gnd = new CircuitElement { Id = "GND", Name = "GND", Type = ElementType.Ground, DisplayNumber = 0, UnitSymbol = "V" };
+            gnd.Pins.Add(new CircuitPin { Id = "GND", Name = "GND" });
+
+            AddElement(netlist, q1);
+            AddElement(netlist, v1);
+            AddElement(netlist, r1);
+            AddElement(netlist, r2);
+            AddElement(netlist, r3);
+            AddElement(netlist, r4);
+            AddElement(netlist, r5);
+            AddElement(netlist, c1);
+            AddElement(netlist, c2);
+            AddElement(netlist, c3);
+            AddElement(netlist, gnd);
+
+            // Connect Nets:
+            // GND: V1.neg, GND.GND, R2.2, R4.2, R5.2, C2.2
+            var netGnd = GetOrCreateNet(netlist, 0, "GND", isGround: true);
+            netGnd.ConnectedPins.Add(new ComponentPinRef("V1", "neg", "neg"));
+            netGnd.ConnectedPins.Add(new ComponentPinRef("GND", "GND", "GND"));
+            netGnd.ConnectedPins.Add(new ComponentPinRef("R2", "2", "2"));
+            netGnd.ConnectedPins.Add(new ComponentPinRef("R4", "2", "2"));
+            netGnd.ConnectedPins.Add(new ComponentPinRef("R5", "2", "2"));
+            netGnd.ConnectedPins.Add(new ComponentPinRef("C2", "2", "2"));
+
+            // VCC: V1.pos, R1.1, R3.1
+            var netVcc = GetOrCreateNet(netlist, 1, "VCC", isPower: true);
+            netVcc.ConnectedPins.Add(new ComponentPinRef("V1", "pos", "pos"));
+            netVcc.ConnectedPins.Add(new ComponentPinRef("R1", "1", "1"));
+            netVcc.ConnectedPins.Add(new ComponentPinRef("R3", "1", "1"));
+
+            // Base Node: Q1.B, R1.2, R2.1, C2.1
+            var netB = GetOrCreateNet(netlist, 2, "Net_Base");
+            netB.ConnectedPins.Add(new ComponentPinRef("Q1", "B", "B"));
+            netB.ConnectedPins.Add(new ComponentPinRef("R1", "2", "2"));
+            netB.ConnectedPins.Add(new ComponentPinRef("R2", "1", "1"));
+            netB.ConnectedPins.Add(new ComponentPinRef("C2", "1", "1"));
+
+            // Collector Node: Q1.C, R3.2, C1.1
+            var netC = GetOrCreateNet(netlist, 3, "Net_Collector");
+            netC.ConnectedPins.Add(new ComponentPinRef("Q1", "C", "C"));
+            netC.ConnectedPins.Add(new ComponentPinRef("R3", "2", "2"));
+            netC.ConnectedPins.Add(new ComponentPinRef("C1", "1", "1"));
+
+            // Emitter Node: Q1.E, R4.1, C3.1
+            var netE = GetOrCreateNet(netlist, 4, "Net_Emitter");
+            netE.ConnectedPins.Add(new ComponentPinRef("Q1", "E", "E"));
+            netE.ConnectedPins.Add(new ComponentPinRef("R4", "1", "1"));
+            netE.ConnectedPins.Add(new ComponentPinRef("C3", "1", "1"));
+
+            // Out Node: C1.2, R5.1
+            var netOut = GetOrCreateNet(netlist, 5, "Net_Out");
+            netOut.ConnectedPins.Add(new ComponentPinRef("C1", "2", "2"));
+            netOut.ConnectedPins.Add(new ComponentPinRef("R5", "1", "1"));
+
+            var inputSource = new CircuitElement { Id = "VS_IN", Type = ElementType.AcVoltageSource, DisplayNumber = 10, UnitSymbol = "mV" };
+            inputSource.InitializeDefaultPins();
+            AddElement(netlist, inputSource);
+            netGnd.ConnectedPins.Add(new ComponentPinRef(inputSource.Id, "neg", "neg"));
+            var netInput = GetOrCreateNet(netlist, 6, "Vin");
+            netInput.ConnectedPins.Add(new ComponentPinRef(inputSource.Id, "pos", "pos"));
+            netInput.ConnectedPins.Add(new ComponentPinRef("C3", "2", "2"));
+
+            var top = ClassifyComplete(netlist, out var strategy);
+            Assert(top == CircuitTopologyType.BjtAmplifier, "3.3.1 Question 13 Topology Classification", $"Got {top}");
+            Assert(strategy.SubtypeName == "CommonBase", "3.3.2 Question 13 Subtype CommonBase", $"Got {strategy.SubtypeName}");
+
+            var solution = await strategy.SolveAsync(netlist, parameters);
+            Assert(solution.IsSuccess, "3.3.3 Question 13 Solve Success", "Solution not successful");
+            Assert(solution.Steps.Count == 5, "3.3.4 Question 13 5 Derivation Steps", $"Got {solution.Steps.Count}");
+
+            // 教材估算法（用户口径 2026-10-18）：分压偏置取空载 U_B=4 V（先按显示单位舍入
+            // 两位），再由发射极回路 I_EQ→I_BQ→I_CQ，共基 h 参数模型给 Au=β(Rc∥RL)/hie、
+            // ri'=Re∥hib；期望值复现该手算舍入链，而不是精确戴维南解。
+            double ubRounded = TeachingDisplay.RoundTo(12.0 * 15000.0 / (30000.0 + 15000.0), QuantityKind.Voltage);
+            double ieqRounded = TeachingDisplay.RoundTo((ubRounded - 0.7) / 2000.0, QuantityKind.Current);
+            double ibqRounded = TeachingDisplay.RoundTo(ieqRounded / 51.0, QuantityKind.Current);
+            double icqRounded = TeachingDisplay.RoundTo(50.0 * ibqRounded, QuantityKind.Current);
+            double vceqRounded = TeachingDisplay.RoundTo(12.0 - icqRounded * 3000.0 - ieqRounded * 2000.0, QuantityKind.Voltage);
+            double hieRounded = TeachingDisplay.RoundTo(50.0 + 51.0 * 0.026 / ieqRounded, QuantityKind.Resistance);
+            double hibRounded = TeachingDisplay.RoundTo(hieRounded / 51.0, QuantityKind.Resistance);
+            double auRounded = TeachingDisplay.RoundPlain(50.0 * 1500.0 / hieRounded);
+            double riRounded = TeachingDisplay.RoundTo(1.0 / (1.0 / 2000.0 + 1.0 / hibRounded), QuantityKind.Resistance);
+            double ReadNumber(string text) => double.Parse(Regex.Match(text, @"[-+]?\d+(?:\.\d+)?").Value,
+                System.Globalization.CultureInfo.InvariantCulture);
+            Assert(Math.Abs(ReadNumber(solution.QPoint.Icq) - icqRounded * 1000) < 0.01,
+                "3.3.5 Common-base loaded-divider ICQ", solution.QPoint.Icq);
+            Assert(Math.Abs(ReadNumber(solution.QPoint.Ibq) - ibqRounded * 1e6) < 0.1,
+                "3.3.6 Common-base loaded-divider IBQ", solution.QPoint.Ibq);
+            Assert(Math.Abs(ReadNumber(solution.QPoint.Vceq) - vceqRounded) < 0.01,
+                "3.3.7 Common-base loaded-divider VCEQ", solution.QPoint.Vceq);
+            Assert(Math.Abs(ReadNumber(solution.Steps[1].ResultValue.Split(',')[0].Split('=')[1]) - hieRounded) < 1,
+                "3.3.8 Common-base h_ie follows actual emitter current", solution.Steps[1].ResultValue);
+            Assert(Math.Abs(ReadNumber(solution.AcParameters.VoltageGain) - auRounded) < 0.1,
+                "3.3.9 Common-base gain follows h parameters", solution.AcParameters.VoltageGain);
+            Assert(Math.Abs(ReadNumber(solution.AcParameters.InputResistance) - riRounded) < 0.1,
+                "3.3.10 Common-base input resistance", solution.AcParameters.InputResistance);
+            Assert(solution.AcParameters.UpperCutoffFreq.Contains("未求解"),
+                "3.3.11 No fabricated common-base high-frequency cutoff", solution.AcParameters.UpperCutoffFreq);
+        }
+
+        // Test 3.4: Polarized Electrolytic Capacitor in BJT Amplifier (Correct vs Reverse Bias)
+        {
+            var netlist = new ElectricalNetlist();
+            var q1 = new CircuitElement { Id = "Q1", Name = "Q1", Type = ElementType.BjtNpn, DisplayNumber = 100.0, UnitSymbol = "β" };
+            q1.Pins.Add(new CircuitPin { Id = "B", Name = "B" });
+            q1.Pins.Add(new CircuitPin { Id = "C", Name = "C" });
+            q1.Pins.Add(new CircuitPin { Id = "E", Name = "E" });
+            AddElement(netlist, q1);
+
+            var vcc = new CircuitElement { Id = "VCC", Name = "VCC", Type = ElementType.DcVoltageSource, DisplayNumber = 12.0, UnitSymbol = "V" };
+            vcc.Pins.Add(new CircuitPin { Id = "pos", Name = "pos" });
+            vcc.Pins.Add(new CircuitPin { Id = "neg", Name = "neg" });
+            AddElement(netlist, vcc);
+
+            var rb1 = new CircuitElement { Id = "Rb1", Name = "Rb1", Type = ElementType.Resistor, DisplayNumber = 51.0, UnitSymbol = "kΩ" };
+            rb1.Pins.Add(new CircuitPin { Id = "1", Name = "1" });
+            rb1.Pins.Add(new CircuitPin { Id = "2", Name = "2" });
+            AddElement(netlist, rb1);
+
+            var rb2 = new CircuitElement { Id = "Rb2", Name = "Rb2", Type = ElementType.Resistor, DisplayNumber = 15.0, UnitSymbol = "kΩ" };
+            rb2.Pins.Add(new CircuitPin { Id = "1", Name = "1" });
+            rb2.Pins.Add(new CircuitPin { Id = "2", Name = "2" });
+            AddElement(netlist, rb2);
+
+            var rc = new CircuitElement { Id = "Rc", Name = "Rc", Type = ElementType.Resistor, DisplayNumber = 3.0, UnitSymbol = "kΩ" };
+            rc.Pins.Add(new CircuitPin { Id = "1", Name = "1" });
+            rc.Pins.Add(new CircuitPin { Id = "2", Name = "2" });
+            AddElement(netlist, rc);
+
+            var re = new CircuitElement { Id = "Re", Name = "Re", Type = ElementType.Resistor, DisplayNumber = 1.0, UnitSymbol = "kΩ" };
+            re.Pins.Add(new CircuitPin { Id = "1", Name = "1" });
+            re.Pins.Add(new CircuitPin { Id = "2", Name = "2" });
+            AddElement(netlist, re);
+
+            // CE: Polarized Electrolytic Capacitor 47uF across Re to GND (Emitter bypass)
+            var ce = new CircuitElement { Id = "CE", Name = "CE", Type = ElementType.CapacitorPolarized, DisplayNumber = 47.0, UnitSymbol = "μF" };
+            ce.Pins.Add(new CircuitPin { Id = "+", Name = "+" });
+            ce.Pins.Add(new CircuitPin { Id = "-", Name = "-" });
+            AddElement(netlist, ce);
+
+            var gndNet = GetOrCreateNet(netlist, 0, "GND", isGround: true);
+            var vccNet = GetOrCreateNet(netlist, 1, "VCC", isPower: true);
+            var bNet = GetOrCreateNet(netlist, 2, "Vb");
+            var cNet = GetOrCreateNet(netlist, 3, "Vc");
+            var eNet = GetOrCreateNet(netlist, 4, "Ve");
+
+            vccNet.ConnectedPins.AddRange(new[] { new ComponentPinRef("VCC", "pos", "pos"), new ComponentPinRef("Rb1", "1", "1"), new ComponentPinRef("Rc", "1", "1") });
+            gndNet.ConnectedPins.AddRange(new[] { new ComponentPinRef("VCC", "neg", "neg"), new ComponentPinRef("Rb2", "2", "2"), new ComponentPinRef("Re", "2", "2"), new ComponentPinRef("CE", "-", "-") });
+            bNet.ConnectedPins.AddRange(new[] { new ComponentPinRef("Q1", "B", "B"), new ComponentPinRef("Rb1", "2", "2"), new ComponentPinRef("Rb2", "1", "1") });
+            cNet.ConnectedPins.AddRange(new[] { new ComponentPinRef("Q1", "C", "C"), new ComponentPinRef("Rc", "2", "2") });
+            eNet.ConnectedPins.AddRange(new[] { new ComponentPinRef("Q1", "E", "E"), new ComponentPinRef("Re", "1", "1"), new ComponentPinRef("CE", "+", "+") });
+
+            var top = ClassifyComplete(netlist, out var strategy);
+            Assert(top == CircuitTopologyType.BjtAmplifier, "3.4.1 Electrolytic CE Amplifier Classified", $"Got {top}");
+
+            var solution = await strategy.SolveAsync(netlist, parameters);
+            Assert(solution.IsSuccess, "3.4.2 Electrolytic CE Solve Success", "Failed to solve");
+            Assert(solution.SummaryText.Contains("CE 正偏正常"), "3.4.3 Electrolytic CE Forward Bias Confirmed", $"SummaryText: {solution.SummaryText}");
+            Assert(solution.Steps.Any(s => s.Title.Contains("电解电容 CE")), "3.4.4 Electrolytic CE Verification Step Present", "Missing CE verification step");
+
+            // Now reverse CE: + to GND, - to Emitter (ve > 0) -> Reverse bias hazard!
+            eNet.ConnectedPins.RemoveAll(p => p.ElementId == "CE");
+            gndNet.ConnectedPins.RemoveAll(p => p.ElementId == "CE");
+            eNet.ConnectedPins.Add(new ComponentPinRef("CE", "-", "-"));
+            gndNet.ConnectedPins.Add(new ComponentPinRef("CE", "+", "+"));
+
+            var revSolution = await strategy.SolveAsync(netlist, parameters);
+            Assert(revSolution.SummaryText.Contains("极性反接"), "3.4.5 Electrolytic CE Reverse Bias Detected", $"SummaryText: {revSolution.SummaryText}");
+            Assert(!revSolution.IsSuccess && revSolution.AcParameters == null &&
+                revSolution.Steps.All(s => s.Phase == SolutionPhase.DcEquivalent) &&
+                revSolution.Steps.Any(s => s.Title.Contains("反接错误") && s.Status == "Error"),
+                "3.4.6 Electrolytic CE Reverse Bias Blocks AC", "Reverse-biased bypass capacitor must block AC analysis");
         }
 
         // =====================================================================
@@ -580,7 +844,7 @@ class Program
             net3.ConnectedPins.Add(new ComponentPinRef("R4", "1", "1"));
             net3.ConnectedPins.Add(new ComponentPinRef("R5", "2", "2"));
 
-            var top = TopologyClassifier.Classify(netlist, out var strategy);
+            var top = ClassifyComplete(netlist, out var strategy);
             Assert(top == CircuitTopologyType.MnaLinear, "4.1.1 Bridge Circuit Classified as MnaLinear", $"Got {top}");
 
             var solution = await strategy.SolveAsync(netlist, parameters);
@@ -667,7 +931,7 @@ class Program
             net3.ConnectedPins.Add(new ComponentPinRef("R4", "1", "1"));
             net3.ConnectedPins.Add(new ComponentPinRef("R5", "2", "2"));
 
-            var top = TopologyClassifier.Classify(netlist, out var strategy);
+            var top = ClassifyComplete(netlist, out var strategy);
             var solution = await strategy.SolveAsync(netlist, parameters);
 
             string log = solution.RawMnaLog;
@@ -739,7 +1003,7 @@ class Program
             net3.ConnectedPins.Add(new ComponentPinRef("V2", "pos", "pos"));
             net3.ConnectedPins.Add(new ComponentPinRef("R2", "1", "1"));
 
-            var top = TopologyClassifier.Classify(netlist, out var strategy);
+            var top = ClassifyComplete(netlist, out var strategy);
             var solution = await strategy.SolveAsync(netlist, parameters);
 
             double ExtractVoltage(string nodeName)
@@ -805,7 +1069,7 @@ class Program
         // Test 6.1: Empty Netlist Handled Gracefully
         {
             var emptyNetlist = new ElectricalNetlist();
-            var top = TopologyClassifier.Classify(emptyNetlist, out var strat);
+            var top = ClassifyComplete(emptyNetlist, out var strat);
             Assert(top == CircuitTopologyType.Unsupported, "6.1.1 Empty Netlist Classification", $"Got {top}");
             var sol = await strat.SolveAsync(emptyNetlist, parameters);
             Assert(sol != null, "6.1.2 Empty Netlist Non-Crash", "Solution is null");
@@ -823,10 +1087,10 @@ class Program
             n0.ConnectedPins.Add(new ComponentPinRef("R1", "1", "1"));
             n0.ConnectedPins.Add(new ComponentPinRef("R1", "2", "2"));
 
-            var top = TopologyClassifier.Classify(net, out var strat);
+            var top = ClassifyComplete(net, out var strat);
             Assert(top == CircuitTopologyType.MnaLinear, "6.2.1 Passive Netlist Classified as MNA", $"Got {top}");
             var sol = await strat.SolveAsync(net, parameters);
-            Assert(sol.IsSuccess, "6.2.2 Passive Netlist Solves Successfully", "Solver crashed");
+            Assert(!sol.IsSuccess, "6.2.2 Shorted resistor is rejected", "Shorted resistor was reported successful");
         }
 
         // Test 6.3: Disconnected / Floating Node Circuit (MNA Partial Pivoting Robustness)
@@ -853,68 +1117,152 @@ class Program
             n2.ConnectedPins.Add(new ComponentPinRef("Rf", "1", "1"));
             n2.ConnectedPins.Add(new ComponentPinRef("Rf", "2", "2"));
 
-            var top = TopologyClassifier.Classify(net, out var strat);
+            var top = ClassifyComplete(net, out var strat);
             var sol = await strat.SolveAsync(net, parameters);
-            Assert(sol.IsSuccess, "6.3.1 Floating Node Singular Matrix Handled via Pivoting Guard", "MNA failed on floating node");
+            Assert(!sol.IsSuccess, "6.3.1 Floating/shorted disconnected network is rejected", "Invalid network was reported successful");
         }
 
         // =====================================================================
-        // SUITE 7: MathFormulaView.FormatLatexToUnicode Assembly Invocation
+        // SUITE 7: MathRendering Assembly Invocation
+        //   Round 7 replaced the old Unicode text conversion
+        //   (MathFormulaView.FormatLatexToUnicode) with the Win2D self-drawn
+        //   pipeline (Math/ parser + layout engine). This suite now verifies the
+        //   production app assembly exposes that pipeline through reflection and
+        //   that representative formulas render without leaking raw LaTeX.
         // =====================================================================
-        Console.WriteLine("\n[Suite 7] MathFormulaView.FormatLatexToUnicode Assembly Invocation");
+        Console.WriteLine("\n[Suite 7] MathRendering Assembly Invocation (parser + layout engine)");
         try
         {
-            var dllPath = @"D:\BJTU\2026年大创\apps\desktop-winui\bin\Debug\net9.0-windows10.0.26100.0\win-x64\CircuitAssistant.dll";
-            if (System.IO.File.Exists(dllPath))
+            string[] dllCandidates =
             {
-                var asm = System.Reflection.Assembly.LoadFrom(dllPath);
-                var type = asm.GetType("CircuitAssistant.Controls.MathFormulaView");
-                var method = type?.GetMethod("FormatLatexToUnicode", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-
-                if (method != null)
-                {
-                    string CallFmt(string input) => (string)method.Invoke(null, new object[] { input })!;
-
-                    // 7.1 Greek omega_0 -> ω₀
-                    string rOmega0 = CallFmt(@"\omega_0");
-                    Assert(rOmega0.Contains("ω₀"), "7.1.1 \\omega_0 -> ω₀", $"Got '{rOmega0}'");
-
-                    // 7.2 Square root \sqrt{LC} -> √(LC)
-                    string rSqrt = CallFmt(@"\sqrt{LC}");
-                    Assert(rSqrt.Contains("√(LC)") || rSqrt.Contains("√"), "7.1.2 \\sqrt{LC} -> √(LC)", $"Got '{rSqrt}'");
-
-                    // 7.3 Greek Delta
-                    string rDelta = CallFmt(@"\Delta f");
-                    Assert(rDelta.Contains("Δ"), "7.1.3 \\Delta f -> Δ f", $"Got '{rDelta}'");
-
-                    // 7.4 Operators \pm, \le, \ge, \to, \infty, \parallel
-                    string rOps = CallFmt(@"\pm \le \ge \to \infty \parallel");
-                    Assert(rOps.Contains("±") && rOps.Contains("≤") && rOps.Contains("≥") && rOps.Contains("→") && rOps.Contains("∞") && rOps.Contains("∥"),
-                        "7.1.4 Math Operators ±, ≤, ≥, →, ∞, ∥", $"Got '{rOps}'");
-
-                    // 7.5 2D Matrix Bracket format
-                    string rMatrix = CallFmt(@"\begin{bmatrix} G & B \\ C & D \end{bmatrix}");
-                    Assert(rMatrix.Contains("⎡") && rMatrix.Contains("⎤") && rMatrix.Contains("⎣") && rMatrix.Contains("⎦"),
-                        "7.1.5 2D Matrix Cambria Math Bracket Envelopes", $"Got:\n{rMatrix}");
-                }
-                else
-                {
-                    Assert(false, "7.1.0 Reflection Method Lookup", "FormatLatexToUnicode method not found on MathFormulaView");
-                }
+                @"D:\BJTU\2026年大创\apps\desktop-winui\bin\_verify\CircuitAssistant.dll",
+                @"D:\BJTU\2026年大创\apps\desktop-winui\bin\Debug\net9.0-windows10.0.26100.0\win-x64\CircuitAssistant.dll"
+            };
+            string? dllPath = dllCandidates.FirstOrDefault(System.IO.File.Exists);
+            if (dllPath == null)
+            {
+                Console.WriteLine("  [SKIP] CircuitAssistant.dll not found (build the app first)");
             }
             else
             {
-                Console.WriteLine($"  [SKIP] CircuitAssistant.dll not found at {dllPath}");
+                var asm = System.Reflection.Assembly.LoadFrom(dllPath);
+                const System.Reflection.BindingFlags PubStatic = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static;
+                const System.Reflection.BindingFlags PubInstance = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance;
+
+                var parserType = asm.GetType("CircuitAssistant.MathRendering.MathLatexParser");
+                var parseMethod = parserType?.GetMethod("Parse", PubStatic);
+                Assert(parserType != null && parseMethod != null,
+                    "7.1.1 MathLatexParser.Parse 反射可见（真实排版取代 Unicode 转写）",
+                    $"parser={parserType != null}, parse={parseMethod != null}");
+
+                var engineType = asm.GetType("CircuitAssistant.MathRendering.MathLayoutEngine");
+                var measurerType = asm.GetType("CircuitAssistant.MathRendering.EstimateMathTextMeasurer");
+                var layoutMethod = engineType?.GetMethod("Layout", PubInstance);
+                var measurerInstance = measurerType?.GetProperty("Instance", PubStatic)?.GetValue(null);
+                Assert(engineType != null && layoutMethod != null && measurerInstance != null,
+                    "7.1.2 MathLayoutEngine + EstimateMathTextMeasurer 反射可见",
+                    $"engine={engineType != null}, layout={layoutMethod != null}, measurer={measurerInstance != null}");
+
+                if (parserType != null && parseMethod != null && engineType != null &&
+                    layoutMethod != null && measurerInstance != null)
+                {
+                    object Render(string latex)
+                    {
+                        object node = parseMethod.Invoke(null, new object?[] { latex })!;
+                        object engine = Activator.CreateInstance(engineType, new object?[] { measurerInstance, null })!;
+                        return layoutMethod.Invoke(engine, new object?[] { node, 600f, 16f })!;
+                    }
+
+                    string FragmentText(object result)
+                    {
+                        object fragments = result.GetType().GetProperty("Fragments", PubInstance)!.GetValue(result)!;
+                        var parts = new List<string>();
+                        foreach (object fragment in (System.Collections.IEnumerable)fragments)
+                            parts.Add((string)fragment.GetType().GetProperty("Text", PubInstance)!.GetValue(fragment)!);
+                        return string.Join("\u0001", parts);
+                    }
+
+                    int CollectionCount(object result, string property) =>
+                        ((System.Collections.ICollection?)result.GetType().GetProperty(property, PubInstance)?.GetValue(result))?.Count ?? 0;
+
+                    // 7.1.3 Greek omega + subscript: real subscript fragment, no "_" leaked.
+                    string omega = FragmentText(Render(@"\omega_0"));
+                    Assert(omega.Contains("ω") && omega.Contains("0") && !omega.Contains('_') && !omega.Contains('\\'),
+                        "7.1.3 \\omega_0 -> 真角标 ω+下标 0（无下划线/原始 LaTeX 泄漏）", $"Got '{omega}'");
+
+                    // 7.1.4 r_be formula: stacked fraction rule drawn, no raw LaTeX tokens.
+                    object rbeResult = Render(@"r_{be}=r_{bb'}+\frac{U_T}{I_{EQ}}");
+                    string rbe = FragmentText(rbeResult);
+                    Assert(rbe.Contains("U") && rbe.Contains("T") && rbe.Contains("EQ") &&
+                           !rbe.Contains('_') && !rbe.Contains('\\') && CollectionCount(rbeResult, "Rules") >= 1,
+                        "7.1.4 r_be 公式：上下叠放分式 + 真角标（无原始 LaTeX）",
+                        $"text='{rbe}', rules={CollectionCount(rbeResult, "Rules")}");
+
+                    // 7.1.5 bmatrix: delimiter geometry present and 4 entries laid out.
+                    object matrixResult = Render(@"\begin{bmatrix} G & B \\ C & D \end{bmatrix}");
+                    string matrix = FragmentText(matrixResult);
+                    Assert(CollectionCount(matrixResult, "Delimiters") >= 2 &&
+                           matrix.Contains('G') && matrix.Contains('B') && matrix.Contains('C') && matrix.Contains('D'),
+                        "7.1.5 bmatrix 矩阵：定界符 + 4 个元素排版",
+                        $"text='{matrix}', delimiters={CollectionCount(matrixResult, "Delimiters")}");
+                }
             }
         }
         catch (Exception ex)
         {
-            Assert(false, "7.1.0 Reflection Execution", $"Exception: {ex.Message}");
+            Assert(false, "7.1.0 MathRendering Reflection Execution", $"Exception: {ex.Message}");
+        }
+
+        // =====================================================================
+        // [Suite 8] Project Management, Serialization & Roundtrip Verification
+        // =====================================================================
+        Console.WriteLine("\n[Suite 8] Project Management & Serialization Roundtrip Verification");
+        try
+        {
+            // 8.1.1 Common Base Template
+            var cbTemplate = CircuitTemplateFactory.CreateCommonBaseTemplate();
+            Assert(cbTemplate.Elements.Count >= 10, "8.1.1 Common Base Template Elements", $"Count: {cbTemplate.Elements.Count}");
+            Assert(cbTemplate.Wires.Count >= 15, "8.1.2 Common Base Template Wires", $"Count: {cbTemplate.Wires.Count}");
+
+            // 8.1.3 DTO Roundtrip
+            var projectData = CircuitProjectData.From(
+                cbTemplate.ProjectName,
+                cbTemplate.ProjectFileName,
+                cbTemplate.Elements,
+                cbTemplate.Wires,
+                new Dictionary<string, double> { ["VCC"] = 12.0, ["Beta"] = 80.0 },
+                "Common Base Test Project");
+
+            string tempFile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"test_circuit_{Guid.NewGuid():N}.circuit");
+            await ProjectManagerService.SaveProjectToFileAsync(tempFile, projectData);
+            Assert(System.IO.File.Exists(tempFile), "8.1.3 Project File Saved To Disk", tempFile);
+
+            var loadedProject = await ProjectManagerService.LoadProjectFromFileAsync(tempFile);
+            Assert(loadedProject.ProjectName == cbTemplate.ProjectName, "8.1.4 Project Name Preserved", loadedProject.ProjectName);
+            Assert(loadedProject.Elements.Count == cbTemplate.Elements.Count, "8.1.5 Elements Count Preserved", $"{loadedProject.Elements.Count}");
+            Assert(loadedProject.Wires.Count == cbTemplate.Wires.Count, "8.1.6 Wires Count Preserved", $"{loadedProject.Wires.Count}");
+            Assert(loadedProject.Parameters.ContainsKey("VCC") && loadedProject.Parameters["VCC"] == 12.0, "8.1.7 Parameter Preserved", "VCC != 12.0");
+
+            var (reconstElements, reconstWires, reconstParams) = loadedProject.ToModel();
+            Assert(reconstElements.Count == cbTemplate.Elements.Count, "8.1.8 Reconstructed Model Elements Count", $"{reconstElements.Count}");
+            Assert(reconstWires.Count == cbTemplate.Wires.Count, "8.1.9 Reconstructed Model Wires Count", $"{reconstWires.Count}");
+
+            // 8.1.10 SPICE Netlist generation from reconstructed project
+            var netlist = NetlistExtractor.Extract(reconstElements, reconstWires);
+            var spice = netlist.ToSpiceNetlist();
+            Assert(spice.Contains("R_") && spice.Contains("Q_Q1") && spice.Contains(".END"), "8.1.10 Exported SPICE Netlist Content", spice);
+
+            if (System.IO.File.Exists(tempFile)) System.IO.File.Delete(tempFile);
+        }
+        catch (Exception ex)
+        {
+            Assert(false, "8.1.0 Suite 8 Exception", ex.ToString());
         }
 
         // =====================================================================
         // Final Summary & Verdict
         // =====================================================================
+        await RunRevisionRegressionChecks();
         Console.WriteLine("\n================================================================================");
         Console.WriteLine("M2 EMPIRICAL VERIFICATION RESULTS SUMMARY");
         Console.WriteLine($"Total Tests:  {TotalTests}");

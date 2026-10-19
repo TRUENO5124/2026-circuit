@@ -1,0 +1,235 @@
+{
+  "Version": "1.2.0",
+  "ProjectName": "半波整流电路",
+  "ProjectFileName": "D01-half-wave-rectifier.circuit",
+  "Description": "知识点：二极管的单向导电性、半波整流。正半周 D1 导通，负载得到正半周电压；负半周 D1 截止，负载电压为零。教材公式：输出平均值 Vavg = Vm/π ≈ 0.318Vm，有效值 Vrms = Vm/2，二极管承受反向峰值电压 PIV = Vm，输出频率等于输入频率（50 Hz）。教材参考：童诗白《模拟电子技术基础》二极管应用电路。",
+  "CreatedAt": "2026-10-18T13:43:57.6752276+08:00",
+  "ModifiedAt": "2026-10-18T13:43:57.6752733+08:00",
+  "Parameters": {},
+  "ParameterUnits": {},
+  "IsTeachingTemplate": true,
+  "Elements": [
+    {
+      "Id": "V1",
+      "Name": "交流信号源 V1 (峰值 10 V / 50 Hz)",
+      "DefinitionId": "source.v_ac_small_signal",
+      "Category": "激励电源",
+      "Description": "50 Hz 正弦交流电压源，峰值 10 V，作为半波整流的输入激励。",
+      "Value": 0,
+      "FrequencyHz": 50,
+      "Material": "Silicon",
+      "MosfetK": 0.001,
+      "MosfetLambda": 0,
+      "Type": "AcVoltageSource",
+      "DisplayNumber": 10,
+      "UnitSymbol": "V",
+      "X": 100,
+      "Y": 320,
+      "Width": 60,
+      "Height": 60,
+      "RotationDeg": 0,
+      "Orientation": "Horizontal",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "pos",
+          "Name": "pos",
+          "RelativeX": 0,
+          "RelativeY": -35,
+          "ConnectedNetId": -1
+        },
+        {
+          "Id": "neg",
+          "Name": "neg",
+          "RelativeX": 0,
+          "RelativeY": 35,
+          "ConnectedNetId": -1
+        }
+      ]
+    },
+    {
+      "Id": "D1",
+      "Name": "整流二极管 D1 (硅管 VF≈0.7 V)",
+      "DefinitionId": "diode.standard",
+      "Category": "半导体管",
+      "Description": "硅整流二极管：正半周正向导通（压降约 0.7 V），负半周反向截止，实现半波整流。",
+      "Value": 0,
+      "FrequencyHz": 1000,
+      "Material": "Silicon",
+      "MosfetK": 0.001,
+      "MosfetLambda": 0,
+      "Type": "Diode",
+      "DisplayNumber": 0.7,
+      "UnitSymbol": "V",
+      "X": 240,
+      "Y": 285,
+      "Width": 80,
+      "Height": 50,
+      "RotationDeg": 0,
+      "Orientation": "Horizontal",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "A",
+          "Name": "A",
+          "RelativeX": -35,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        },
+        {
+          "Id": "K",
+          "Name": "K",
+          "RelativeX": 35,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        }
+      ]
+    },
+    {
+      "Id": "RL",
+      "Name": "负载电阻 RL (1 kΩ)",
+      "DefinitionId": "passive.resistor",
+      "Category": "无源器件",
+      "Description": "整流负载电阻，把整流后的脉动电流转换为脉动电压。",
+      "Value": 0,
+      "FrequencyHz": 1000,
+      "Material": "Silicon",
+      "MosfetK": 0.001,
+      "MosfetLambda": 0,
+      "Type": "Resistor",
+      "DisplayNumber": 1,
+      "UnitSymbol": "kΩ",
+      "X": 420,
+      "Y": 325,
+      "Width": 80,
+      "Height": 50,
+      "RotationDeg": 90,
+      "Orientation": "Vertical",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "1",
+          "Name": "1",
+          "RelativeX": -40,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        },
+        {
+          "Id": "2",
+          "Name": "2",
+          "RelativeX": 40,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        }
+      ]
+    },
+    {
+      "Id": "GND",
+      "Name": "参考地 GND",
+      "DefinitionId": "reference.ground",
+      "Category": "参考地",
+      "Description": "基准零电位参考节点，统一电路地电位基准。",
+      "Value": 0,
+      "FrequencyHz": 1000,
+      "Material": "Silicon",
+      "MosfetK": 0.001,
+      "MosfetLambda": 0,
+      "Type": "Ground",
+      "DisplayNumber": 0,
+      "UnitSymbol": "V",
+      "X": 280,
+      "Y": 502,
+      "Width": 40,
+      "Height": 35,
+      "RotationDeg": 0,
+      "Orientation": "Horizontal",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "GND",
+          "Name": "GND",
+          "RelativeX": 0,
+          "RelativeY": -22,
+          "ConnectedNetId": -1
+        }
+      ]
+    }
+  ],
+  "Wires": [
+    {
+      "Id": "W_VIN_V1_pos_D1",
+      "StartElementId": "V1",
+      "StartPinName": "pos",
+      "EndElementId": "D1",
+      "EndPinName": "A",
+      "StartX": 100,
+      "StartY": 285,
+      "EndX": 205,
+      "EndY": 285,
+      "NetId": 1,
+      "FlipCorner": false,
+      "CustomMid": 0,
+      "Waypoints": null
+    },
+    {
+      "Id": "W_VOUT_D1_K_RL",
+      "StartElementId": "D1",
+      "StartPinName": "K",
+      "EndElementId": "RL",
+      "EndPinName": "1",
+      "StartX": 275,
+      "StartY": 285,
+      "EndX": 420,
+      "EndY": 285,
+      "NetId": 2,
+      "FlipCorner": false,
+      "CustomMid": 0,
+      "Waypoints": null
+    },
+    {
+      "Id": "W_GND_RAIL",
+      "StartElementId": "",
+      "StartPinName": "",
+      "EndElementId": "",
+      "EndPinName": "",
+      "StartX": 80,
+      "StartY": 480,
+      "EndX": 440,
+      "EndY": 480,
+      "NetId": 0,
+      "FlipCorner": false,
+      "CustomMid": 0,
+      "Waypoints": null
+    },
+    {
+      "Id": "W_GND_V1_neg",
+      "StartElementId": "V1",
+      "StartPinName": "neg",
+      "EndElementId": "W_GND_RAIL",
+      "EndPinName": "WireTap",
+      "StartX": 100,
+      "StartY": 355,
+      "EndX": 100,
+      "EndY": 480,
+      "NetId": 0,
+      "FlipCorner": false,
+      "CustomMid": 0,
+      "Waypoints": null
+    },
+    {
+      "Id": "W_GND_RL_2",
+      "StartElementId": "RL",
+      "StartPinName": "2",
+      "EndElementId": "W_GND_RAIL",
+      "EndPinName": "WireTap",
+      "StartX": 420,
+      "StartY": 365,
+      "EndX": 420,
+      "EndY": 480,
+      "NetId": 0,
+      "FlipCorner": false,
+      "CustomMid": 0,
+      "Waypoints": null
+    }
+  ]
+}

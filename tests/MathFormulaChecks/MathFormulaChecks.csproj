@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>MathFormulaChecks</AssemblyName>
+    <RootNamespace>MathFormulaChecks</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <!-- Console harness (not dotnet-test). Links the pure C# math renderer sources:
+       parser + layout engine + measurement abstraction. No WinUI / Win2D project
+       reference so the checks run headless with a deterministic fake measurer. -->
+  <ItemGroup>
+    <Compile Include="..\..\apps\desktop-winui\Math\*.cs" Link="Math\%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

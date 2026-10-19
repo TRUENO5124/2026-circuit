@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8" ?>
+﻿<?xml version="1.0" encoding="utf-8" ?>
 <Page
     x:Class="CircuitAssistant.Views.AnalysisStudioPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -11,19 +11,165 @@
 
     <Page.KeyboardAccelerators>
         <KeyboardAccelerator Key="R" Modifiers="Control" Invoked="OnCtrlRInvoked" />
+        <KeyboardAccelerator Key="Z" Modifiers="Control" Invoked="OnCtrlZInvoked" />
+        <KeyboardAccelerator Key="Y" Modifiers="Control" Invoked="OnCtrlYInvoked" />
+        <KeyboardAccelerator Key="S" Modifiers="Control" Invoked="OnCtrlSInvoked" />
+        <KeyboardAccelerator Key="S" Modifiers="Control,Shift" Invoked="OnCtrlShiftSInvoked" />
+        <KeyboardAccelerator Key="O" Modifiers="Control" Invoked="OnCtrlOInvoked" />
         <KeyboardAccelerator Key="Delete" Invoked="OnDeleteInvoked" />
         <KeyboardAccelerator Key="Back" Invoked="OnDeleteInvoked" />
-        <KeyboardAccelerator Key="R" Invoked="OnRInvoked" />
+        <KeyboardAccelerator Key="Space" Invoked="OnSpaceInvoked" />
+        <KeyboardAccelerator Key="X" Modifiers="Menu" Invoked="OnAltXInvoked" />
         <KeyboardAccelerator Key="Escape" Invoked="OnEscapeInvoked" />
         <KeyboardAccelerator Key="W" Invoked="OnWInvoked" />
     </Page.KeyboardAccelerators>
 
+    <Page.Resources>
+        <!-- 单步推导卡片（步骤号 / 标题 / 方法 / 解释 / 公式框 / 结果），供“解题推导”页的直流/交流等效电路分组复用。 -->
+        <DataTemplate x:Key="AnalysisStepCardTemplate" x:DataType="models:AnalysisStep">
+            <Expander
+                Margin="0,0,0,10"
+                HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Stretch"
+                IsExpanded="{x:Bind IsExpanded, Mode=TwoWay}">
+                <Expander.Header>
+                    <Grid ColumnSpacing="8" RowSpacing="2">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Border
+                            Grid.Row="0"
+                            Grid.Column="0"
+                            Padding="6,1"
+                            VerticalAlignment="Top"
+                            Background="{ThemeResource AccentFillColorDefaultBrush}"
+                            CornerRadius="4">
+                            <TextBlock
+                                FontSize="11"
+                                FontWeight="Bold"
+                                Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
+                                Text="{x:Bind StepNumber}" />
+                        </Border>
+                        <TextBlock
+                            Grid.Row="0"
+                            Grid.Column="1"
+                            VerticalAlignment="Center"
+                            FontWeight="SemiBold"
+                            FontSize="12.5"
+                            Text="{x:Bind Title}"
+                            TextWrapping="Wrap" />
+                        <TextBlock
+                            Grid.Row="1"
+                            Grid.Column="1"
+                            FontSize="10"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Text="{x:Bind MethodName}"
+                            TextWrapping="Wrap"
+                            MaxLines="2"
+                            TextTrimming="CharacterEllipsis" />
+                    </Grid>
+                </Expander.Header>
+
+                <StackPanel Padding="4,8" Spacing="10">
+                    <!-- Pedagogical Explanation Text (Wrapped, never overflows) -->
+                    <TextBlock
+                        Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                        LineHeight="21"
+                        FontSize="12.5"
+                        Text="{x:Bind Explanation}"
+                        TextWrapping="Wrap" />
+
+                    <!-- Native Formula Box (Win2D math typesetting: real sub/superscripts) -->
+                    <Border
+                        Padding="12,9"
+                        Background="{ThemeResource LayerFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="6">
+                        <StackPanel Spacing="6">
+                            <TextBlock
+                                FontSize="11"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Text="符号推导公式 / 定理方程:" />
+                            <controls:MathFormulaView Formula="{x:Bind LatexFormula}" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Numerical Substitution Box -->
+                    <Border
+                        Padding="12,9"
+                        Background="{ThemeResource LayerFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="6">
+                        <StackPanel Spacing="6">
+                            <TextBlock
+                                FontSize="11"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Text="数值代入与结果（最多保留两位小数）:" />
+                            <controls:MathFormulaView Formula="{x:Bind SubstitutionFormula}" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Result Value Highlight -->
+                    <Border
+                        Padding="12,8"
+                        Background="{ThemeResource AccentFillColorTertiaryBrush}"
+                        CornerRadius="6">
+                        <TextBlock
+                            FontSize="12.5"
+                            FontWeight="SemiBold"
+                            Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                            Text="{x:Bind ResultValue}"
+                            TextWrapping="Wrap" />
+                    </Border>
+                </StackPanel>
+            </Expander>
+        </DataTemplate>
+
+        <!-- 直流等效电路 / 交流等效电路 分组：组标题 + 组内步骤卡片。无相位的结果只有一组且不显示组标题。 -->
+        <DataTemplate x:Key="AnalysisStepGroupTemplate" x:DataType="models:AnalysisStepGroup">
+            <StackPanel Margin="0,0,0,6" Spacing="8">
+                <Border
+                    Visibility="{x:Bind HasHeader, Converter={StaticResource BoolToVisibilityConverter}}"
+                    Padding="12,9"
+                    Background="{ThemeResource AccentFillColorTertiaryBrush}"
+                    BorderBrush="{ThemeResource AccentFillColorDefaultBrush}"
+                    BorderThickness="1,1,1,0"
+                    CornerRadius="6">
+                    <StackPanel Spacing="3">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon Glyph="&#xE9D2;" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                            <TextBlock
+                                Text="{x:Bind Title}"
+                                FontWeight="SemiBold"
+                                FontSize="12.5"
+                                Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                        </StackPanel>
+                        <TextBlock
+                            Text="{x:Bind Subtitle}"
+                            FontSize="10.5"
+                            TextWrapping="Wrap"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                </Border>
+                <ItemsControl ItemsSource="{x:Bind Steps}" ItemTemplate="{StaticResource AnalysisStepCardTemplate}" />
+            </StackPanel>
+        </DataTemplate>
+    </Page.Resources>
     <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
         <Grid.RowDefinitions>
             <!-- Top Command & Ribbon Toolbar -->
             <RowDefinition Height="Auto" />
             <!-- Main 3-Column Workspace -->
             <RowDefinition Height="*" />
+            <!-- Full-width, persistent analysis status -->
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <!-- ======================================================== -->
@@ -53,10 +199,10 @@
                         VerticalAlignment="Center">
                         <FontIcon Glyph="&#xE8EF;" FontSize="18" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
-                    <StackPanel Spacing="1">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock Text="{x:Bind ViewModel.ProjectName, Mode=OneWay}" FontWeight="SemiBold" FontSize="15" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <TextBlock Text="{x:Bind ViewModel.ProjectName, Mode=OneWay}" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center" />
                             <Border
+                                VerticalAlignment="Center"
                                 Visibility="{x:Bind ViewModel.HasActiveProject, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}"
                                 Background="{ThemeResource AccentFillColorTertiaryBrush}"
                                 CornerRadius="4"
@@ -64,63 +210,180 @@
                                 <TextBlock Text="当前工程" FontSize="11" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" FontWeight="SemiBold" />
                             </Border>
                             <Border
+                                VerticalAlignment="Center"
                                 Visibility="{x:Bind ViewModel.HasActiveProject, Converter={StaticResource InverseBoolToVisibilityConverter}, Mode=OneWay}"
                                 Background="{ThemeResource LayerFillColorAltBrush}"
                                 CornerRadius="4"
                                 Padding="6,1">
                                 <TextBlock Text="空白工作区" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontWeight="SemiBold" />
                             </Border>
-                        </StackPanel>
-                        <TextBlock
-                            Text="分压式偏置共射放大电路 · 直流工作点 Q、微变等效与频率特性教学推导"
-                            FontSize="11"
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     </StackPanel>
-                </StackPanel>
-
-                <!-- Center Status Badge -->
-                <StackPanel Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
-                    <InfoBadge Style="{StaticResource SuccessDotInfoBadgeStyle}" />
-                    <TextBlock Text="{x:Bind ViewModel.StatusMessage, Mode=OneWay}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
 
                 <!-- Quick Actions Toolbar -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                    <!-- Add / New Project DropDown -->
-                    <DropDownButton Style="{StaticResource AccentButtonStyle}">
+                    <StackPanel.Resources>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="VerticalAlignment" Value="Center" />
+                        </Style>
+                        <Style TargetType="FontIcon">
+                            <Setter Property="VerticalAlignment" Value="Center" />
+                        </Style>
+                    </StackPanel.Resources>
+                    <!-- Project Management DropDown (工程管理) -->
+                    <DropDownButton VerticalAlignment="Center" MinHeight="36" Style="{StaticResource AccentButtonStyle}" ToolTipService.ToolTip="工程管理菜单 (新建/打开/保存/导出)">
                         <StackPanel Orientation="Horizontal" Spacing="6">
-                            <FontIcon Glyph="&#xE710;" FontSize="13" />
-                            <TextBlock Text="添加工程" FontSize="12" FontWeight="SemiBold" />
+                            <FontIcon Glyph="&#xE8B7;" FontSize="13" />
+                            <TextBlock Text="工程管理" FontSize="12" FontWeight="SemiBold" />
                         </StackPanel>
                         <DropDownButton.Flyout>
                             <MenuFlyout>
-                                <MenuFlyoutItem
-                                    Command="{x:Bind ViewModel.CreateBlankProjectCommand}"
-                                    Text="新建空白电路工程">
-                                    <MenuFlyoutItem.Icon>
+                                <MenuFlyoutSubItem Text="新建电路工程">
+                                    <MenuFlyoutSubItem.Icon>
                                         <FontIcon Glyph="&#xE710;" />
+                                    </MenuFlyoutSubItem.Icon>
+                                    <MenuFlyoutItem
+                                        Command="{x:Bind ViewModel.CreateBlankProjectCommand}"
+                                        Text="新建空白工程">
+                                        <MenuFlyoutItem.Icon>
+                                            <FontIcon Glyph="&#xE710;" />
+                                        </MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutItem
+                                        Command="{x:Bind ViewModel.CreateDefaultProjectCommand}"
+                                        Text="分压式偏置共射放大电路 (教学推荐)">
+                                        <MenuFlyoutItem.Icon>
+                                            <FontIcon Glyph="&#xE943;" />
+                                        </MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutItem
+                                        Command="{x:Bind ViewModel.CreateAcCoupledProjectCommand}"
+                                        Text="阻容耦合单管放大电路">
+                                        <MenuFlyoutItem.Icon>
+                                            <FontIcon Glyph="&#xE756;" />
+                                        </MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutItem
+                                        Command="{x:Bind ViewModel.CreateCommonBaseProjectCommand}"
+                                        Text="共基极放大电路 (教学题13标准模板)">
+                                        <MenuFlyoutItem.Icon>
+                                            <FontIcon Glyph="&#xE8EF;" />
+                                        </MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutItem
+                                        Command="{x:Bind ViewModel.CreateRcTransientProjectCommand}"
+                                        Text="一阶 RC 暂态响应电路">
+                                        <MenuFlyoutItem.Icon>
+                                            <FontIcon Glyph="&#xE9D9;" />
+                                        </MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                </MenuFlyoutSubItem>
+
+                                <MenuFlyoutSeparator />
+
+                                <MenuFlyoutItem
+                                    Command="{x:Bind ViewModel.OpenProjectCommand}"
+                                    Text="打开工程 / 导入 Web CircuitGraph... (Ctrl+O)">
+                                    <MenuFlyoutItem.Icon>
+                                        <FontIcon Glyph="&#xE8E5;" />
                                     </MenuFlyoutItem.Icon>
                                 </MenuFlyoutItem>
+
                                 <MenuFlyoutItem
-                                    Command="{x:Bind ViewModel.CreateDefaultProjectCommand}"
-                                    Text="分压式偏置共射放大电路 (教学推荐)">
+                                    Command="{x:Bind ViewModel.SaveProjectCommand}"
+                                    Text="保存工程 (Ctrl+S)">
                                     <MenuFlyoutItem.Icon>
-                                        <FontIcon Glyph="&#xE943;" />
+                                        <FontIcon Glyph="&#xE74E;" />
                                     </MenuFlyoutItem.Icon>
                                 </MenuFlyoutItem>
+
                                 <MenuFlyoutItem
-                                    Command="{x:Bind ViewModel.CreateAcCoupledProjectCommand}"
-                                    Text="阻容耦合单管放大电路">
+                                    Command="{x:Bind ViewModel.SaveProjectAsCommand}"
+                                    Text="工程另存为... (Ctrl+Shift+S)">
                                     <MenuFlyoutItem.Icon>
-                                        <FontIcon Glyph="&#xE756;" />
+                                        <FontIcon Glyph="&#xE792;" />
+                                    </MenuFlyoutItem.Icon>
+                                </MenuFlyoutItem>
+
+                                <MenuFlyoutSeparator />
+
+                                <MenuFlyoutItem
+                                    Command="{x:Bind ViewModel.ExportSpiceNetlistCommand}"
+                                    Text="导出 SPICE 网表 (*.cir)...">
+                                    <MenuFlyoutItem.Icon>
+                                        <FontIcon Glyph="&#xE896;" />
+                                    </MenuFlyoutItem.Icon>
+                                </MenuFlyoutItem>
+
+                                <MenuFlyoutSubItem Text="导出分步分析报告">
+                                    <MenuFlyoutSubItem.Icon>
+                                        <FontIcon Glyph="&#xE8A5;" />
+                                    </MenuFlyoutSubItem.Icon>
+                                    <MenuFlyoutItem
+                                        Command="{x:Bind ViewModel.ExportAnalysisReportCommand}"
+                                        CommandParameter="Latex"
+                                        Text="LaTeX + Circuitikz 源文件 (*.tex)">
+                                        <MenuFlyoutItem.Icon>
+                                            <FontIcon Glyph="&#xE943;" />
+                                        </MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutItem
+                                        Command="{x:Bind ViewModel.ExportAnalysisReportCommand}"
+                                        CommandParameter="Docx"
+                                        Text="Word 文档 (*.docx)">
+                                        <MenuFlyoutItem.Icon>
+                                            <FontIcon Glyph="&#xE8A5;" />
+                                        </MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutItem
+                                        Command="{x:Bind ViewModel.ExportAnalysisReportCommand}"
+                                        CommandParameter="Markdown"
+                                        Text="Markdown 文档 (*.md)">
+                                        <MenuFlyoutItem.Icon>
+                                            <FontIcon Glyph="&#xE8A5;" />
+                                        </MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutItem
+                                        Command="{x:Bind ViewModel.ExportAnalysisReportCommand}"
+                                        CommandParameter="Html"
+                                        Text="HTML 网页 (*.html，可打印为 PDF)">
+                                        <MenuFlyoutItem.Icon>
+                                            <FontIcon Glyph="&#xE774;" />
+                                        </MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                </MenuFlyoutSubItem>
+
+                                <MenuFlyoutSeparator />
+
+                                <MenuFlyoutItem
+                                    Command="{x:Bind ViewModel.CloseProjectCommand}"
+                                    Text="关闭当前工程">
+                                    <MenuFlyoutItem.Icon>
+                                        <FontIcon Glyph="&#xE711;" />
                                     </MenuFlyoutItem.Icon>
                                 </MenuFlyoutItem>
                             </MenuFlyout>
                         </DropDownButton.Flyout>
                     </DropDownButton>
 
+                    <!-- Quick Save Project Button -->
+                    <Button VerticalAlignment="Center" MinHeight="36"
+                        Command="{x:Bind ViewModel.SaveProjectCommand}"
+                        Visibility="{x:Bind ViewModel.HasActiveProject, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}"
+                        Style="{StaticResource DefaultButtonStyle}"
+                        ToolTipService.ToolTip="快速保存工程到文件 (Ctrl+S)">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon Glyph="&#xE74E;" FontSize="12" />
+                            <TextBlock Text="保存" FontSize="12" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button VerticalAlignment="Center" MinHeight="36" Command="{x:Bind ViewModel.CancelSolveCommand}"
+                            Visibility="{x:Bind ViewModel.IsAnalyzing, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}"
+                            Content="取消求解" />
+
                     <!-- Close Active Project Button -->
-                    <Button
+                    <Button VerticalAlignment="Center" MinHeight="36"
                         Command="{x:Bind ViewModel.CloseProjectCommand}"
                         Visibility="{x:Bind ViewModel.HasActiveProject, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}"
                         Style="{StaticResource DefaultButtonStyle}"
@@ -132,14 +395,14 @@
                     </Button>
 
                     <ToggleSwitch
-                        Header=""
+                        VerticalAlignment="Center"
                         Visibility="{x:Bind ViewModel.HasActiveProject, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}"
                         IsOn="{x:Bind ViewModel.ShowMnaLogs, Mode=TwoWay}"
                         OffContent="MNA日志: 隐藏"
                         OnContent="MNA日志: 显示"
                         FontSize="12" />
 
-                    <Button
+                    <Button VerticalAlignment="Center" MinHeight="36"
                         Command="{x:Bind ViewModel.ResetToDefaultsCommand}"
                         Visibility="{x:Bind ViewModel.HasActiveProject, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}"
                         Style="{StaticResource DefaultButtonStyle}">
@@ -149,7 +412,7 @@
                         </StackPanel>
                     </Button>
 
-                    <Button
+                    <Button VerticalAlignment="Center" MinHeight="36"
                         Command="{x:Bind ViewModel.SolveCircuitCommand}"
                         Visibility="{x:Bind ViewModel.HasActiveProject, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}"
                         IsEnabled="{x:Bind ViewModel.IsAnalyzing, Converter={StaticResource InverseBoolConverter}, Mode=OneWay}"
@@ -341,25 +604,20 @@
                                 <FontIcon Glyph="&#xE8A5;" FontSize="32" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Border>
                             <TextBlock
-                                Text="电路教学仿真与理论分析工作室"
+                                Text="电路画布"
                                 FontSize="22"
                                 FontWeight="SemiBold"
                                 HorizontalAlignment="Center" />
                             <TextBlock
-                                Text="当前处于空白工作区。请选择创建全新空白电路工程，或从经典模电实验教学工程开始演练："
+                                Text="当前处于空白工作区。创建空白电路工程，开始绘制电路。"
                                 FontSize="13"
                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                 HorizontalAlignment="Center"
                                 TextAlignment="Center" />
                         </StackPanel>
 
-                        <!-- Project Template Cards -->
-                        <Grid ColumnSpacing="16">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
+                        <!-- Blank Project Card -->
+                        <Grid Width="280" HorizontalAlignment="Center">
 
                             <!-- Card 1: Blank Project -->
                             <Border
@@ -408,108 +666,6 @@
                                 </Grid>
                             </Border>
 
-                            <!-- Card 2: Default Recommended Template -->
-                            <Border
-                                Grid.Column="1"
-                                Padding="16"
-                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                BorderBrush="{ThemeResource AccentFillColorDefaultBrush}"
-                                BorderThickness="1.5"
-                                CornerRadius="8">
-                                <Grid RowSpacing="12">
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="*" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-
-                                    <Grid Grid.Row="0">
-                                        <Border
-                                            Width="40"
-                                            Height="40"
-                                            Background="{ThemeResource AccentFillColorTertiaryBrush}"
-                                            CornerRadius="8"
-                                            HorizontalAlignment="Left">
-                                            <FontIcon Glyph="&#xE943;" FontSize="20" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                        </Border>
-                                        <Border
-                                            Background="{ThemeResource AccentFillColorDefaultBrush}"
-                                            CornerRadius="4"
-                                            Padding="6,2"
-                                            HorizontalAlignment="Right"
-                                            VerticalAlignment="Top">
-                                            <TextBlock Text="教学推荐" FontSize="10" Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}" FontWeight="SemiBold" />
-                                        </Border>
-                                    </Grid>
-
-                                    <TextBlock Grid.Row="1" Text="分压式共射放大电路" FontWeight="SemiBold" FontSize="14" />
-                                    <TextBlock
-                                        Grid.Row="2"
-                                        Text="《电子技术基础》经典教学标准模板，含偏置电阻网络、隔直电容、旁路电容与三极管微变模型。"
-                                        FontSize="11"
-                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                        TextWrapping="Wrap" />
-
-                                    <Button
-                                        Grid.Row="3"
-                                        HorizontalAlignment="Stretch"
-                                        Command="{x:Bind ViewModel.CreateDefaultProjectCommand}"
-                                        Style="{StaticResource AccentButtonStyle}">
-                                        <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                                            <FontIcon Glyph="&#xE768;" FontSize="12" />
-                                            <TextBlock Text="载入经典工程" FontSize="12" FontWeight="SemiBold" />
-                                        </StackPanel>
-                                    </Button>
-                                </Grid>
-                            </Border>
-
-                            <!-- Card 3: AC Coupled Template -->
-                            <Border
-                                Grid.Column="2"
-                                Padding="16"
-                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                BorderThickness="1"
-                                CornerRadius="8">
-                                <Grid RowSpacing="12">
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="*" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-
-                                    <Border
-                                        Grid.Row="0"
-                                        Width="40"
-                                        Height="40"
-                                        Background="{ThemeResource LayerFillColorAltBrush}"
-                                        CornerRadius="8"
-                                        HorizontalAlignment="Left">
-                                        <FontIcon Glyph="&#xE756;" FontSize="20" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                    </Border>
-
-                                    <TextBlock Grid.Row="1" Text="阻容耦合单管放大电路" FontWeight="SemiBold" FontSize="14" />
-                                    <TextBlock
-                                        Grid.Row="2"
-                                        Text="标准交流放大通路电路，便于学习观察电容隔直通交与微变等效交流通路特性。"
-                                        FontSize="11"
-                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                        TextWrapping="Wrap" />
-
-                                    <Button
-                                        Grid.Row="3"
-                                        HorizontalAlignment="Stretch"
-                                        Command="{x:Bind ViewModel.CreateAcCoupledProjectCommand}"
-                                        Style="{StaticResource DefaultButtonStyle}">
-                                        <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                                            <FontIcon Glyph="&#xE8B9;" FontSize="12" />
-                                            <TextBlock Text="载入工程模板" FontSize="12" />
-                                        </StackPanel>
-                                    </Button>
-                                </Grid>
-                            </Border>
                         </Grid>
 
                         <!-- Tip Footer -->
@@ -592,7 +748,9 @@
                         Elements="{x:Bind ViewModel.Elements, Mode=OneWay}"
                         Wires="{x:Bind ViewModel.Wires, Mode=OneWay}"
                         SelectedElement="{x:Bind ViewModel.SelectedElement, Mode=TwoWay}"
+                        SelectedWire="{x:Bind ViewModel.SelectedWire, Mode=TwoWay}"
                         ElementSelected="MainCircuitCanvas_ElementSelected"
+                        WireSelected="MainCircuitCanvas_WireSelected"
                         ElementDroppedFromLibrary="MainCircuitCanvas_ElementDroppedFromLibrary"
                         WireCreated="MainCircuitCanvas_WireCreated"
                         StatusMessageChanged="MainCircuitCanvas_StatusMessageChanged"
@@ -689,9 +847,6 @@
                             <!-- Right Status -->
                             <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
                                 <TextBlock Text="原生矢量画布渲染模式" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
-                                <Border Background="{ThemeResource SystemFillColorSuccessBackgroundBrush}" CornerRadius="3" Padding="6,1">
-                                    <TextBlock Text="求解引擎就绪" FontSize="10" Foreground="{ThemeResource SystemFillColorSuccessBrush}" FontWeight="SemiBold" />
-                                </Border>
                             </StackPanel>
                         </Grid>
                     </Border>
@@ -863,16 +1018,128 @@
                                                     </Border>
                                                 </Grid>
 
-                                                <!-- Element Value Edit -->
+                                                <!-- Element Value Edit: the label is type specific so that
+                                                     a MOSFET voltage is explicitly shown as Vth, a JFET /
+                                                     depletion MOSFET value as VGS(off), beta for BJTs, etc. -->
                                                 <Grid ColumnSpacing="8">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="104" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="70" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock
+                                                        VerticalAlignment="Center"
+                                                        FontSize="12"
+                                                        Text="{x:Bind ViewModel.SelectedElement.ParameterLabel, Mode=OneWay}"
+                                                        TextWrapping="Wrap" />
+                                                    <NumberBox
+                                                        Grid.Column="1"
+                                                        GettingFocus="InspectorEdit_GettingFocus"
+                                                        ToolTipService.ToolTip="{x:Bind ViewModel.SelectedElement.ParameterDescription, Mode=OneWay}"
+                                                        Value="{x:Bind ViewModel.SelectedElement.DisplayNumber, Mode=TwoWay}"
+                                                        SpinButtonPlacementMode="Compact" />
+                                                    <TextBox
+                                                        Grid.Column="2"
+                                                        GettingFocus="InspectorEdit_GettingFocus"
+                                                        Text="{x:Bind ViewModel.SelectedElement.UnitSymbol, Mode=TwoWay}"
+                                                        PlaceholderText="单位" />
+                                                </Grid>
+
+                                                <!-- Physical meaning of the editable value (Vth, VGS(off), VF, beta, ...) -->
+                                                <TextBlock
+                                                    FontSize="11"
+                                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                    Text="{x:Bind ViewModel.SelectedElement.ParameterDescription, Mode=OneWay}"
+                                                    TextWrapping="Wrap"
+                                                    Visibility="{x:Bind ViewModel.SelectedElement.HasParameterDescription, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}" />
+
+                                                <StackPanel Spacing="6"
+                                                    Visibility="{x:Bind ViewModel.SelectedElement.SupportsFetParameters, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}">
+                                                    <NumberBox Header="MOS 跨导参数 K (A/V²)"
+                                                        Visibility="{x:Bind ViewModel.SelectedElement.IsMosfet, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}"
+                                                        GettingFocus="InspectorEdit_GettingFocus" Minimum="0"
+                                                        ToolTipService.ToolTip="ID=K·Vov²；若题目给 IDSS，则 K=IDSS/VGS(off)²。默认 0.001 A/V²。"
+                                                        Value="{x:Bind ViewModel.SelectedElement.MosfetK, Mode=TwoWay}" />
+                                                    <NumberBox Header="JFET 饱和漏极电流 IDSS (A)"
+                                                        Visibility="{x:Bind ViewModel.SelectedElement.IsJfet, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}"
+                                                        GettingFocus="InspectorEdit_GettingFocus" Minimum="0"
+                                                        ToolTipService.ToolTip="VGS=0 时的饱和电流；例如 8 mA 填 0.008。0 表示尚未填写，求解时提示补参。"
+                                                        Value="{x:Bind ViewModel.SelectedElement.JfetIdss, Mode=TwoWay}" />
+                                                    <NumberBox Header="沟道长度调制 λ (1/V，0=忽略)"
+                                                        GettingFocus="InspectorEdit_GettingFocus" Minimum="0"
+                                                        Value="{x:Bind ViewModel.SelectedElement.MosfetLambda, Mode=TwoWay}" />
+                                                </StackPanel>
+
+                                                <!-- Silicon / germanium forward-voltage material choice (diode and BJT only) -->
+                                                <Grid
+                                                    ColumnSpacing="8"
+                                                    Visibility="{x:Bind ViewModel.SelectedElement.SupportsSemiconductorMaterial, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="104" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock VerticalAlignment="Center" Text="半导体材料:" FontSize="12" />
+                                                    <ComboBox
+                                                        Grid.Column="1"
+                                                        HorizontalAlignment="Stretch"
+                                                        ItemsSource="{x:Bind ViewModel.SelectedElement.MaterialOptions, Mode=OneWay}"
+                                                        SelectedIndex="{x:Bind ViewModel.SelectedElement.MaterialIndex, Mode=TwoWay}" />
+                                                </Grid>
+
+                                                <!-- BJT small-signal model parameters: r_bb' and r_be/h_ie (0 = auto) -->
+                                                <StackPanel
+                                                    Spacing="6"
+                                                    Visibility="{x:Bind ViewModel.SelectedElement.SupportsBjtSmallSignalParameters, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}">
+                                                    <Grid ColumnSpacing="8">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="104" />
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="70" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock VerticalAlignment="Center" Text="基区体电阻 rbb′:" FontSize="12" />
+                                                        <NumberBox
+                                                            Grid.Column="1"
+                                                            GettingFocus="InspectorEdit_GettingFocus"
+                                                            ToolTipService.ToolTip="BJT 基区体电阻 r_bb'（Ω）。0 = 自动：共射/共集 200 Ω、共基 50 Ω"
+                                                            Minimum="0"
+                                                            Value="{x:Bind ViewModel.SelectedElement.BjtRbb, Mode=TwoWay}"
+                                                            SpinButtonPlacementMode="Compact" />
+                                                        <TextBlock Grid.Column="2" VerticalAlignment="Center" Text="Ω (0=自动)" FontSize="10" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                    </Grid>
+                                                    <Grid ColumnSpacing="8">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="104" />
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="70" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock VerticalAlignment="Center" Text="给定 rbe/hie:" FontSize="12" />
+                                                        <NumberBox
+                                                            Grid.Column="1"
+                                                            GettingFocus="InspectorEdit_GettingFocus"
+                                                            ToolTipService.ToolTip="题目直接给定的 r_be = h_ie（Ω）。0 = 按 Q 点用 r_be = r_bb' + (1+β)U_T/I_EQ 计算"
+                                                            Minimum="0"
+                                                            Value="{x:Bind ViewModel.SelectedElement.BjtRbe, Mode=TwoWay}"
+                                                            SpinButtonPlacementMode="Compact" />
+                                                        <TextBlock Grid.Column="2" VerticalAlignment="Center" Text="Ω (0=计算)" FontSize="10" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                    </Grid>
+                                                    <TextBlock
+                                                        FontSize="10"
+                                                        Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                                        TextWrapping="Wrap"
+                                                        Text="r_bb′ 自动：共射/共集 200 Ω、共基 50 Ω；给定 rbe(hie) 后直接采用，不再按 Q 点公式计算。" />
+                                                </StackPanel>
+
+                                                <Grid ColumnSpacing="8"
+                                                      Visibility="{x:Bind ViewModel.SelectedElement.IsAcSource, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}">
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="70" />
                                                         <ColumnDefinition Width="*" />
                                                         <ColumnDefinition Width="70" />
                                                     </Grid.ColumnDefinitions>
-                                                    <TextBlock VerticalAlignment="Center" Text="元件数值:" FontSize="12" />
-                                                    <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.SelectedElement.DisplayNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
-                                                    <TextBox Grid.Column="2" Text="{x:Bind ViewModel.SelectedElement.UnitSymbol, Mode=TwoWay}" PlaceholderText="单位" />
+                                                    <TextBlock Text="信号频率:" VerticalAlignment="Center" />
+                                                    <NumberBox GettingFocus="InspectorEdit_GettingFocus" Grid.Column="1" Value="{x:Bind ViewModel.SelectedElement.FrequencyHz, Mode=TwoWay}"
+                                                               Minimum="0.000001" SpinButtonPlacementMode="Compact" />
+                                                    <TextBlock Grid.Column="2" Text="Hz" VerticalAlignment="Center" />
                                                 </Grid>
 
                                                 <!-- Coordinates & Rotation Display -->
@@ -884,7 +1151,7 @@
                                                     </Grid.ColumnDefinitions>
                                                     <TextBlock VerticalAlignment="Center" Text="位置布局:" FontSize="12" />
                                                     <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="{x:Bind ViewModel.SelectedElement.PositionDisplay, Mode=OneWay}" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                                    <TextBlock Grid.Column="2" VerticalAlignment="Center" Text="{x:Bind ViewModel.SelectedElement.RotationDisplay, Mode=OneWay}" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                    <TextBlock Grid.Column="2" VerticalAlignment="Center" Text="{x:Bind ViewModel.SelectedElement.TransformDisplay, Mode=OneWay}" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                                 </Grid>
 
                                                 <!-- Pins Inspection -->
@@ -908,9 +1175,10 @@
                                                     </ItemsControl>
                                                 </StackPanel>
 
-                                                <!-- Action Buttons: Rotate & Delete -->
+                                                <!-- Action Buttons: Rotate, Mirror & Delete -->
                                                 <Grid ColumnSpacing="8">
                                                     <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
                                                         <ColumnDefinition Width="*" />
                                                         <ColumnDefinition Width="*" />
                                                     </Grid.ColumnDefinitions>
@@ -921,11 +1189,22 @@
                                                         Style="{StaticResource DefaultButtonStyle}">
                                                         <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
                                                             <FontIcon Glyph="&#xE7AD;" FontSize="12" />
-                                                            <TextBlock Text="旋转 90° (R)" FontSize="11" />
+                                                            <TextBlock Text="旋转 90° (空格)" FontSize="11" />
                                                         </StackPanel>
                                                     </Button>
                                                     <Button
                                                         Grid.Column="1"
+                                                        HorizontalAlignment="Stretch"
+                                                        Command="{x:Bind ViewModel.MirrorSelectedElementCommand}"
+                                                        Style="{StaticResource DefaultButtonStyle}"
+                                                        ToolTipService.ToolTip="水平镜像选中的元件 (快捷键 Alt+X)">
+                                                        <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                                                            <FontIcon Glyph="&#xE8AB;" FontSize="12" />
+                                                            <TextBlock Text="镜像 (Alt+X)" FontSize="11" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <Button
+                                                        Grid.Column="2"
                                                         HorizontalAlignment="Stretch"
                                                         Command="{x:Bind ViewModel.DeleteSelectedElementCommand}"
                                                         Style="{StaticResource DefaultButtonStyle}">
@@ -935,6 +1214,93 @@
                                                         </StackPanel>
                                                     </Button>
                                                 </Grid>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <!-- Selected Wire Inspector Card -->
+                                        <Border
+                                            Padding="14"
+                                            Background="{ThemeResource LayerFillColorAltBrush}"
+                                            BorderBrush="{ThemeResource AccentFillColorDefaultBrush}"
+                                            BorderThickness="1.5"
+                                            CornerRadius="8"
+                                            Visibility="{x:Bind ViewModel.SelectedWire, Converter={StaticResource NotNullToVisibilityConverter}, Mode=OneWay}">
+                                            <StackPanel Spacing="10">
+                                                <Grid>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                        <Border
+                                                            Width="34"
+                                                            Height="34"
+                                                            Background="{ThemeResource AccentFillColorTertiaryBrush}"
+                                                            CornerRadius="6">
+                                                            <FontIcon Glyph="&#xE8AC;" FontSize="16" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                        </Border>
+                                                        <StackPanel Spacing="1">
+                                                            <TextBlock Text="导线连接 (Wire)" FontWeight="SemiBold" FontSize="13" />
+                                                            <TextBlock Text="{x:Bind ViewModel.SelectedWire.Id, Mode=OneWay}" FontSize="10" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                    <Border
+                                                        HorizontalAlignment="Right"
+                                                        Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                                        CornerRadius="4"
+                                                        Padding="6,2">
+                                                        <TextBlock Text="已选中导线" FontSize="10" Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}" FontWeight="SemiBold" />
+                                                    </Border>
+                                                </Grid>
+
+                                                <!-- Wire Properties Table -->
+                                                <Border
+                                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="6"
+                                                    Padding="10,8">
+                                                    <Grid RowSpacing="6">
+                                                        <Grid.RowDefinitions>
+                                                            <RowDefinition Height="Auto" />
+                                                            <RowDefinition Height="Auto" />
+                                                            <RowDefinition Height="Auto" />
+                                                        </Grid.RowDefinitions>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+
+                                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="起 点：" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{x:Bind ViewModel.SelectedWire.StartElementId, Mode=OneWay}" FontSize="11" FontWeight="SemiBold" />
+
+                                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="终 点：" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{x:Bind ViewModel.SelectedWire.EndElementId, Mode=OneWay}" FontSize="11" FontWeight="SemiBold" />
+
+                                                        <TextBlock Grid.Row="2" Grid.Column="0" Text="电 网：" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{x:Bind ViewModel.SelectedWire.NetId, Mode=OneWay}" FontSize="11" />
+                                                    </Grid>
+                                                </Border>
+
+                                                <!-- Wire Action Buttons -->
+                                                <Button
+                                                    HorizontalAlignment="Stretch"
+                                                    Command="{x:Bind ViewModel.DeleteSelectedWireCommand}"
+                                                    Style="{StaticResource DefaultButtonStyle}"
+                                                    ToolTipService.ToolTip="删除选中的导线 (快捷键: Delete)">
+                                                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                                                        <FontIcon Glyph="&#xE74D;" FontSize="12" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+                                                        <TextBlock Text="删除该导线 (Del)" FontSize="11" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+                                                    </StackPanel>
+                                                </Button>
+
+                                                <!-- Branch out Button -->
+                                                <Button
+                                                    HorizontalAlignment="Stretch"
+                                                    Click="BranchFromSelectedWireButton_Click"
+                                                    Style="{StaticResource DefaultButtonStyle}"
+                                                    ToolTipService.ToolTip="从这根导线拉出新分支导线">
+                                                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                                                        <FontIcon Glyph="&#xE8B7;" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                                        <TextBlock Text="从该导线引出分支节点..." FontSize="11" />
+                                                    </StackPanel>
+                                                </Button>
                                             </StackPanel>
                                         </Border>
 
@@ -948,7 +1314,7 @@
                                             Visibility="{x:Bind ViewModel.SelectedElement, Converter={StaticResource NullToVisibilityConverter}, Mode=OneWay}">
                                             <StackPanel Orientation="Horizontal" Spacing="8">
                                                 <FontIcon Glyph="&#xE946;" FontSize="13" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" VerticalAlignment="Center" />
-                                                <TextBlock Text="提示：在画布中点击任意元器件即可高亮选中、拖拽调整布局位置，或按 R 旋转" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                                <TextBlock Text="提示：在画布中点击任意元器件即可高亮选中、拖拽调整布局位置，或按空格键旋转、Alt+X 水平镜像、Ctrl+Z 撤销" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
                                             </StackPanel>
                                         </Border>
 
@@ -997,7 +1363,7 @@
                                                                         </Border>
                                                                         <TextBlock Text="{x:Bind Name}" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center" />
                                                                         <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="3" Padding="4,0">
-                                                                            <TextBlock Text="{x:Bind RotationDisplay, Mode=OneWay}" FontSize="9" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                                            <TextBlock Text="{x:Bind TransformDisplay, Mode=OneWay}" FontSize="9" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                                                         </Border>
                                                                     </StackPanel>
 
@@ -1014,10 +1380,18 @@
                                                                         <Button
                                                                             Padding="4,2"
                                                                             Style="{StaticResource SubtleButtonStyle}"
-                                                                            ToolTipService.ToolTip="旋转 90° (R)"
+                                                                            ToolTipService.ToolTip="旋转 90° (空格)"
                                                                             Click="ElementCard_RotateClick"
                                                                             Tag="{x:Bind}">
                                                                             <FontIcon Glyph="&#xE7AD;" FontSize="10" />
+                                                                        </Button>
+                                                                        <Button
+                                                                            Padding="4,2"
+                                                                            Style="{StaticResource SubtleButtonStyle}"
+                                                                            ToolTipService.ToolTip="水平镜像 (Alt+X)"
+                                                                            Click="ElementCard_MirrorClick"
+                                                                            Tag="{x:Bind}">
+                                                                            <FontIcon Glyph="&#xE8AB;" FontSize="10" />
                                                                         </Button>
                                                                         <Button
                                                                             Padding="4,2"
@@ -1035,7 +1409,7 @@
                                                                             <ColumnDefinition Width="*" />
                                                                             <ColumnDefinition Width="65" />
                                                                         </Grid.ColumnDefinitions>
-                                                                        <NumberBox Grid.Column="0" Value="{x:Bind DisplayNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
+                                                                        <NumberBox GettingFocus="InspectorEdit_GettingFocus" Grid.Column="0" Value="{x:Bind DisplayNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
                                                                         <TextBox Grid.Column="1" Text="{x:Bind UnitSymbol, Mode=TwoWay}" PlaceholderText="单位" />
                                                                     </Grid>
                                                                 </Grid>
@@ -1081,7 +1455,7 @@
                                                                 <ColumnDefinition Width="80" />
                                                             </Grid.ColumnDefinitions>
                                                             <TextBlock VerticalAlignment="Center" Text="电源 Vcc:" FontSize="11" />
-                                                            <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.VccNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
+                                                            <NumberBox GettingFocus="InspectorEdit_GettingFocus" Grid.Column="1" Value="{x:Bind ViewModel.VccNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
                                                             <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.VoltageUnits}" SelectedItem="{x:Bind ViewModel.SelectedVccUnit, Mode=TwoWay}" />
                                                         </Grid>
 
@@ -1093,7 +1467,7 @@
                                                                 <ColumnDefinition Width="80" />
                                                             </Grid.ColumnDefinitions>
                                                             <TextBlock VerticalAlignment="Center" Text="基极 Rb1:" FontSize="11" />
-                                                            <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.Rb1Number, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
+                                                            <NumberBox GettingFocus="InspectorEdit_GettingFocus" Grid.Column="1" Value="{x:Bind ViewModel.Rb1Number, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
                                                             <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.ResistanceUnits}" SelectedItem="{x:Bind ViewModel.SelectedRb1Unit, Mode=TwoWay}" />
                                                         </Grid>
 
@@ -1105,7 +1479,7 @@
                                                                 <ColumnDefinition Width="80" />
                                                             </Grid.ColumnDefinitions>
                                                             <TextBlock VerticalAlignment="Center" Text="基极 Rb2:" FontSize="11" />
-                                                            <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.Rb2Number, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
+                                                            <NumberBox GettingFocus="InspectorEdit_GettingFocus" Grid.Column="1" Value="{x:Bind ViewModel.Rb2Number, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
                                                             <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.ResistanceUnits}" SelectedItem="{x:Bind ViewModel.SelectedRb2Unit, Mode=TwoWay}" />
                                                         </Grid>
 
@@ -1117,7 +1491,7 @@
                                                                 <ColumnDefinition Width="80" />
                                                             </Grid.ColumnDefinitions>
                                                             <TextBlock VerticalAlignment="Center" Text="集电极 Rc:" FontSize="11" />
-                                                            <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.RcNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
+                                                            <NumberBox GettingFocus="InspectorEdit_GettingFocus" Grid.Column="1" Value="{x:Bind ViewModel.RcNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
                                                             <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.ResistanceUnits}" SelectedItem="{x:Bind ViewModel.SelectedRcUnit, Mode=TwoWay}" />
                                                         </Grid>
 
@@ -1129,7 +1503,7 @@
                                                                 <ColumnDefinition Width="80" />
                                                             </Grid.ColumnDefinitions>
                                                             <TextBlock VerticalAlignment="Center" Text="发射极 Re:" FontSize="11" />
-                                                            <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.ReNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
+                                                            <NumberBox GettingFocus="InspectorEdit_GettingFocus" Grid.Column="1" Value="{x:Bind ViewModel.ReNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
                                                             <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.ResistanceUnits}" SelectedItem="{x:Bind ViewModel.SelectedReUnit, Mode=TwoWay}" />
                                                         </Grid>
                                                     </StackPanel>
@@ -1156,7 +1530,7 @@
                                                                 <ColumnDefinition Width="80" />
                                                             </Grid.ColumnDefinitions>
                                                             <TextBlock VerticalAlignment="Center" Text="负载 RL:" FontSize="11" />
-                                                            <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.RlNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
+                                                            <NumberBox GettingFocus="InspectorEdit_GettingFocus" Grid.Column="1" Value="{x:Bind ViewModel.RlNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
                                                             <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.ResistanceUnits}" SelectedItem="{x:Bind ViewModel.SelectedRlUnit, Mode=TwoWay}" />
                                                         </Grid>
 
@@ -1168,7 +1542,7 @@
                                                                 <ColumnDefinition Width="80" />
                                                             </Grid.ColumnDefinitions>
                                                             <TextBlock VerticalAlignment="Center" Text="输入 C1:" FontSize="11" />
-                                                            <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.C1Number, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
+                                                            <NumberBox GettingFocus="InspectorEdit_GettingFocus" Grid.Column="1" Value="{x:Bind ViewModel.C1Number, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
                                                             <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.CapacitanceUnits}" SelectedItem="{x:Bind ViewModel.SelectedC1Unit, Mode=TwoWay}" />
                                                         </Grid>
 
@@ -1180,7 +1554,7 @@
                                                                 <ColumnDefinition Width="80" />
                                                             </Grid.ColumnDefinitions>
                                                             <TextBlock VerticalAlignment="Center" Text="输出 C2:" FontSize="11" />
-                                                            <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.C2Number, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
+                                                            <NumberBox GettingFocus="InspectorEdit_GettingFocus" Grid.Column="1" Value="{x:Bind ViewModel.C2Number, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
                                                             <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.CapacitanceUnits}" SelectedItem="{x:Bind ViewModel.SelectedC2Unit, Mode=TwoWay}" />
                                                         </Grid>
 
@@ -1192,7 +1566,7 @@
                                                                 <ColumnDefinition Width="80" />
                                                             </Grid.ColumnDefinitions>
                                                             <TextBlock VerticalAlignment="Center" Text="旁路 Ce:" FontSize="11" />
-                                                            <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.CeNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
+                                                            <NumberBox GettingFocus="InspectorEdit_GettingFocus" Grid.Column="1" Value="{x:Bind ViewModel.CeNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
                                                             <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.CapacitanceUnits}" SelectedItem="{x:Bind ViewModel.SelectedCeUnit, Mode=TwoWay}" />
                                                         </Grid>
                                                     </StackPanel>
@@ -1219,9 +1593,48 @@
                                                                 <ColumnDefinition Width="80" />
                                                             </Grid.ColumnDefinitions>
                                                             <TextBlock VerticalAlignment="Center" Text="晶体管 β:" FontSize="11" />
-                                                            <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.BetaNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
+                                                            <NumberBox GettingFocus="InspectorEdit_GettingFocus" Grid.Column="1" Value="{x:Bind ViewModel.BetaNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
                                                             <TextBlock Grid.Column="2" VerticalAlignment="Center" Text="hFE" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                                         </Grid>
+
+                                                        <!-- BJT small-signal model parameters: r_bb' and r_be/h_ie (0 = auto) -->
+                                                        <Grid ColumnSpacing="8">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="100" />
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="80" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock VerticalAlignment="Center" Text="基区体电阻 rbb′:" FontSize="11" />
+                                                            <NumberBox
+                                                                GettingFocus="InspectorEdit_GettingFocus"
+                                                                Grid.Column="1"
+                                                                ToolTipService.ToolTip="BJT 基区体电阻 r_bb'（Ω）。0 = 自动：共射/共集 200 Ω、共基 50 Ω"
+                                                                Minimum="0"
+                                                                Value="{x:Bind ViewModel.RbbNumber, Mode=TwoWay}"
+                                                                SpinButtonPlacementMode="Compact" />
+                                                            <TextBlock Grid.Column="2" VerticalAlignment="Center" Text="Ω (0=自动)" FontSize="10" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                        </Grid>
+                                                        <Grid ColumnSpacing="8">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="100" />
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="80" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock VerticalAlignment="Center" Text="给定 rbe/hie:" FontSize="11" />
+                                                            <NumberBox
+                                                                GettingFocus="InspectorEdit_GettingFocus"
+                                                                Grid.Column="1"
+                                                                ToolTipService.ToolTip="题目直接给定的 r_be = h_ie（Ω）。0 = 按 Q 点用 r_be = r_bb' + (1+β)U_T/I_EQ 计算"
+                                                                Minimum="0"
+                                                                Value="{x:Bind ViewModel.RbeNumber, Mode=TwoWay}"
+                                                                SpinButtonPlacementMode="Compact" />
+                                                            <TextBlock Grid.Column="2" VerticalAlignment="Center" Text="Ω (0=计算)" FontSize="10" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                        </Grid>
+                                                        <TextBlock
+                                                            FontSize="10"
+                                                            Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                                            TextWrapping="Wrap"
+                                                            Text="rbb′ 自动：共射/共集 200 Ω、共基 50 Ω；给定 rbe(hie) 后直接采用，不再按 Q 点公式计算。" />
 
                                                         <!-- Frequency -->
                                                         <Grid ColumnSpacing="8">
@@ -1231,7 +1644,7 @@
                                                                 <ColumnDefinition Width="80" />
                                                             </Grid.ColumnDefinitions>
                                                             <TextBlock VerticalAlignment="Center" Text="信号频率 f:" FontSize="11" />
-                                                            <NumberBox Grid.Column="1" Value="{x:Bind ViewModel.FreqNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
+                                                            <NumberBox GettingFocus="InspectorEdit_GettingFocus" Grid.Column="1" Value="{x:Bind ViewModel.FreqNumber, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
                                                             <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" DisplayMemberPath="Symbol" ItemsSource="{x:Bind ViewModel.FrequencyUnits}" SelectedItem="{x:Bind ViewModel.SelectedFreqUnit, Mode=TwoWay}" />
                                                         </Grid>
                                                     </StackPanel>
@@ -1318,6 +1731,8 @@
                                                         <RowDefinition Height="Auto" />
                                                         <RowDefinition Height="Auto" />
                                                         <RowDefinition Height="Auto" />
+                                                        <RowDefinition Height="Auto" />
+                                                        <RowDefinition Height="Auto" />
                                                     </Grid.RowDefinitions>
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="110" />
@@ -1341,7 +1756,165 @@
 
                                                     <TextBlock Grid.Row="5" Grid.Column="0" Text="通频带带宽 BW:" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                                     <TextBlock Grid.Row="5" Grid.Column="1" Text="{x:Bind ViewModel.Result.AcParameters.Bandwidth, Mode=OneWay}" FontWeight="SemiBold" FontSize="13" />
+
+                                                    <!-- 信号源内阻 Rs（仅当拓扑识别到源内阻时显示） -->
+                                                    <TextBlock
+                                                        Grid.Row="6"
+                                                        Grid.Column="0"
+                                                        Text="信号源内阻 Rs:"
+                                                        FontSize="12"
+                                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                        Visibility="{x:Bind ViewModel.Result.AcParameters.HasSourceResistance, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}" />
+                                                    <TextBlock
+                                                        Grid.Row="6"
+                                                        Grid.Column="1"
+                                                        Text="{x:Bind ViewModel.Result.AcParameters.SourceResistance, Mode=OneWay}"
+                                                        FontWeight="SemiBold"
+                                                        FontSize="13"
+                                                        Visibility="{x:Bind ViewModel.Result.AcParameters.HasSourceResistance, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}" />
+
+                                                    <TextBlock
+                                                        Grid.Row="7"
+                                                        Grid.Column="0"
+                                                        Text="源电压增益 Aus:"
+                                                        FontSize="12"
+                                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                        Visibility="{x:Bind ViewModel.Result.AcParameters.HasSourceResistance, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}" />
+                                                    <TextBlock
+                                                        Grid.Row="7"
+                                                        Grid.Column="1"
+                                                        Text="{x:Bind ViewModel.Result.AcParameters.SourceVoltageGain, Mode=OneWay}"
+                                                        FontWeight="SemiBold"
+                                                        FontSize="13"
+                                                        Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                                        Visibility="{x:Bind ViewModel.Result.AcParameters.HasSourceResistance, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}" />
                                                 </Grid>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <!-- MNA 2.0 structured linear-network result -->
+                                        <Border
+                                            Padding="14"
+                                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="8"
+                                            Visibility="{x:Bind ViewModel.Result.LinearNetwork, Converter={StaticResource NotNullToVisibilityConverter}, Mode=OneWay}">
+                                            <StackPanel Spacing="10">
+                                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                                    <FontIcon Glyph="&#xE9D2;" FontSize="13" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                                    <TextBlock Text="通用线性网络结构化结果 (MNA 2.0)" FontWeight="SemiBold" FontSize="13" />
+                                                </StackPanel>
+                                                <TextBlock
+                                                    FontSize="11"
+                                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                    Text="{x:Bind ViewModel.Result.LinearNetwork.ModelSummary, Mode=OneWay}"
+                                                    TextWrapping="Wrap" />
+
+                                                <TextBlock Text="节点直流电位" FontSize="12" FontWeight="SemiBold" />
+                                                <ItemsControl ItemsSource="{x:Bind ViewModel.Result.NodePotentials, Mode=OneWay}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="models:NodePotentialInfo">
+                                                            <Grid Margin="0,1">
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="*" />
+                                                                    <ColumnDefinition Width="Auto" />
+                                                                </Grid.ColumnDefinitions>
+                                                                <TextBlock Grid.Column="0" FontSize="11" Text="{x:Bind NetName}" />
+                                                                <TextBlock Grid.Column="1" FontSize="11" FontWeight="SemiBold" Text="{x:Bind Display}" />
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+
+                                                <TextBlock Text="任意端口戴维南 / 诺顿等效" FontSize="12" FontWeight="SemiBold" />
+                                                <ScrollViewer MaxHeight="170" VerticalScrollBarVisibility="Auto">
+                                                    <ItemsControl ItemsSource="{x:Bind ViewModel.Result.PortEquivalents, Mode=OneWay}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="models:PortEquivalentInfo">
+                                                                <Grid Margin="0,1">
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="*" />
+                                                                        <ColumnDefinition Width="Auto" />
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <TextBlock Grid.Column="0" FontSize="11" Text="{x:Bind PortLabel}" TextTrimming="CharacterEllipsis" />
+                                                                    <TextBlock Grid.Column="1" FontSize="11" FontWeight="SemiBold" Text="{x:Bind DetailDisplay}" />
+                                                                </Grid>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </ScrollViewer>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <!-- AC frequency response + sweep -->
+                                        <Border
+                                            Padding="14"
+                                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="8"
+                                            Visibility="{x:Bind ViewModel.Result.FrequencyResponse, Converter={StaticResource NotNullToVisibilityConverter}, Mode=OneWay}">
+                                            <StackPanel Spacing="10">
+                                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                                    <FontIcon Glyph="&#xE756;" FontSize="13" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                                    <TextBlock Text="交流相量与频率响应扫描" FontWeight="SemiBold" FontSize="13" />
+                                                </StackPanel>
+                                                <TextBlock
+                                                    FontSize="11"
+                                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                    Text="{x:Bind ViewModel.Result.FrequencyResponse.OutputPortLabel, Mode=OneWay}"
+                                                    TextWrapping="Wrap" />
+                                                <Grid RowSpacing="6">
+                                                    <Grid.RowDefinitions>
+                                                        <RowDefinition Height="Auto" />
+                                                        <RowDefinition Height="Auto" />
+                                                        <RowDefinition Height="Auto" />
+                                                        <RowDefinition Height="Auto" />
+                                                    </Grid.RowDefinitions>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="120" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="工作频率增益:" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                    <TextBlock Grid.Row="0" Grid.Column="1" FontSize="12" FontWeight="SemiBold" Text="{x:Bind ViewModel.Result.FrequencyResponse.GainRatioDisplay, Mode=OneWay}" />
+                                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="增益 (dB):" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                    <TextBlock Grid.Row="1" Grid.Column="1" FontSize="12" FontWeight="SemiBold" Text="{x:Bind ViewModel.Result.FrequencyResponse.GainDbDisplay, Mode=OneWay}" />
+                                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="相位:" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                    <TextBlock Grid.Row="2" Grid.Column="1" FontSize="12" FontWeight="SemiBold" Text="{x:Bind ViewModel.Result.FrequencyResponse.PhaseDisplay, Mode=OneWay}" />
+                                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="下限 / 上限 / BW:" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                    <TextBlock Grid.Row="3" Grid.Column="1" FontSize="12" FontWeight="SemiBold">
+                                                        <Run Text="{x:Bind ViewModel.Result.FrequencyResponse.LowerCutoffDisplay, Mode=OneWay}" />
+                                                        <Run Text=" / " />
+                                                        <Run Text="{x:Bind ViewModel.Result.FrequencyResponse.UpperCutoffDisplay, Mode=OneWay}" />
+                                                        <Run Text=" / " />
+                                                        <Run Text="{x:Bind ViewModel.Result.FrequencyResponse.BandwidthDisplay, Mode=OneWay}" />
+                                                    </TextBlock>
+                                                </Grid>
+                                                <TextBlock Text="频率扫描点 (f, |H| dB, 相位)" FontSize="12" FontWeight="SemiBold" />
+                                                <ScrollViewer MaxHeight="150" VerticalScrollBarVisibility="Auto">
+                                                    <ItemsControl ItemsSource="{x:Bind ViewModel.Result.AcSweepPoints, Mode=OneWay}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="models:AcSweepPointInfo">
+                                                                <Grid Margin="0,1">
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="*" />
+                                                                        <ColumnDefinition Width="Auto" />
+                                                                        <ColumnDefinition Width="Auto" />
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <TextBlock Grid.Column="0" FontSize="11" Text="{x:Bind FrequencyDisplay}" />
+                                                                    <TextBlock Grid.Column="1" Margin="8,0,0,0" FontSize="11" FontWeight="SemiBold" Text="{x:Bind GainDbDisplay}" />
+                                                                    <TextBlock Grid.Column="2" Margin="10,0,0,0" FontSize="11" Text="{x:Bind PhaseDisplay}" />
+                                                                </Grid>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </ScrollViewer>
+                                                <TextBlock
+                                                    FontSize="11"
+                                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                    Text="{x:Bind ViewModel.Result.FrequencyResponse.BoundaryNote, Mode=OneWay}"
+                                                    TextWrapping="Wrap" />
                                             </StackPanel>
                                         </Border>
                                     </StackPanel>
@@ -1361,113 +1934,15 @@
                                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,8,0,0">
                                     <StackPanel Spacing="12">
                                         <TextBlock
-                                            Text="依据《电子技术基础（模拟部分）》国家统编规范，采用戴维南等效、微变等效与时间常数法进行解析推导："
+                                            Text="依据当前电路类型与模型假设生成教学推导："
                                             FontSize="11"
                                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                             TextWrapping="Wrap" />
 
-                                        <!-- Step Cards List -->
-                                        <ItemsControl ItemsSource="{x:Bind ViewModel.Result.Steps, Mode=OneWay}">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate x:DataType="models:AnalysisStep">
-                                                    <Expander
-                                                        Margin="0,0,0,10"
-                                                        HorizontalAlignment="Stretch"
-                                                        HorizontalContentAlignment="Stretch"
-                                                        IsExpanded="{x:Bind IsExpanded, Mode=TwoWay}">
-                                                        <Expander.Header>
-                                                            <Grid>
-                                                                <Grid.ColumnDefinitions>
-                                                                    <ColumnDefinition Width="Auto" />
-                                                                    <ColumnDefinition Width="*" />
-                                                                    <ColumnDefinition Width="Auto" />
-                                                                </Grid.ColumnDefinitions>
-                                                                <Border
-                                                                    Grid.Column="0"
-                                                                    Margin="0,0,8,0"
-                                                                    Padding="6,1"
-                                                                    Background="{ThemeResource AccentFillColorDefaultBrush}"
-                                                                    CornerRadius="4">
-                                                                    <TextBlock
-                                                                        FontSize="11"
-                                                                        FontWeight="Bold"
-                                                                        Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
-                                                                        Text="{x:Bind StepNumber}" />
-                                                                </Border>
-                                                                <TextBlock
-                                                                    Grid.Column="1"
-                                                                    VerticalAlignment="Center"
-                                                                    FontWeight="SemiBold"
-                                                                    FontSize="12"
-                                                                    Text="{x:Bind Title}" />
-                                                                <Border
-                                                                    Grid.Column="2"
-                                                                    Background="{ThemeResource LayerFillColorAltBrush}"
-                                                                    CornerRadius="3"
-                                                                    Padding="6,1">
-                                                                    <TextBlock FontSize="10" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind MethodName}" />
-                                                                </Border>
-                                                            </Grid>
-                                                        </Expander.Header>
-
-                                                        <StackPanel Padding="4,8" Spacing="10">
-                                                            <!-- Pedagogical Explanation Text (Wrapped, never overflows) -->
-                                                            <TextBlock
-                                                                Foreground="{ThemeResource TextFillColorPrimaryBrush}"
-                                                                LineHeight="20"
-                                                                FontSize="12"
-                                                                Text="{x:Bind Explanation}"
-                                                                TextWrapping="Wrap" />
-
-                                                            <!-- Native Formula Box (Cambria Math) -->
-                                                            <Border
-                                                                Padding="10,6"
-                                                                Background="{ThemeResource LayerFillColorDefaultBrush}"
-                                                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                                                BorderThickness="1"
-                                                                CornerRadius="6">
-                                                                <StackPanel Spacing="4">
-                                                                    <TextBlock
-                                                                        FontSize="10"
-                                                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                                                        Text="符号推导公理 / 定理方程:" />
-                                                                    <controls:MathFormulaView Formula="{x:Bind LatexFormula}" />
-                                                                </StackPanel>
-                                                            </Border>
-
-                                                            <!-- Numerical Substitution Box -->
-                                                            <Border
-                                                                Padding="10,6"
-                                                                Background="{ThemeResource LayerFillColorDefaultBrush}"
-                                                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                                                BorderThickness="1"
-                                                                CornerRadius="6">
-                                                                <StackPanel Spacing="4">
-                                                                    <TextBlock
-                                                                        FontSize="10"
-                                                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                                                        Text="数值代入与规范科学计数法解算:" />
-                                                                    <controls:MathFormulaView Formula="{x:Bind SubstitutionFormula}" />
-                                                                </StackPanel>
-                                                            </Border>
-
-                                                            <!-- Result Value Highlight -->
-                                                            <Border
-                                                                Padding="10,6"
-                                                                Background="{ThemeResource AccentFillColorTertiaryBrush}"
-                                                                CornerRadius="6">
-                                                                <TextBlock
-                                                                    FontSize="12"
-                                                                    FontWeight="SemiBold"
-                                                                    Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                                                                    Text="{x:Bind ResultValue}" />
-                                                            </Border>
-                                                        </StackPanel>
-                                                    </Expander>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-
+                                        <!-- Derivation steps grouped by teaching phase: 直流等效电路 (DC) -> 交流等效电路 (AC) -->
+                                        <ItemsControl
+                                            ItemsSource="{x:Bind ViewModel.Result.StepGroups, Mode=OneWay}"
+                                            ItemTemplate="{StaticResource AnalysisStepGroupTemplate}" />
                                         <!-- Bottom Raw MNA Log Expander -->
                                         <Expander
                                             HorizontalAlignment="Stretch"
@@ -1499,6 +1974,55 @@
                             </PivotItem>
                         </Pivot>
                     </Grid>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Diagnostics stay visible across the entire application bottom edge. -->
+        <Grid Grid.Row="2">
+            <Border
+                Visibility="{x:Bind ViewModel.HasAnalysisError, Converter={StaticResource InverseBoolToVisibilityConverter}, Mode=OneWay}"
+                Background="{ThemeResource LayerFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="16,8">
+                <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        Text="{x:Bind ViewModel.FooterStatusLabel, Mode=OneWay}"
+                        FontSize="12" FontWeight="SemiBold" VerticalAlignment="Top"
+                        Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                    <ScrollViewer Grid.Column="1" MaxHeight="96"
+                                  HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                        <TextBlock Text="{x:Bind ViewModel.FooterStatusMessage, Mode=OneWay}"
+                                   FontSize="12" TextWrapping="Wrap" IsTextSelectionEnabled="True"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+            <Border
+                Visibility="{x:Bind ViewModel.HasAnalysisError, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}"
+                Background="{ThemeResource SystemFillColorCriticalBackgroundBrush}"
+                BorderBrush="{ThemeResource SystemFillColorCriticalBrush}"
+                BorderThickness="0,2,0,0"
+                Padding="16,10"
+                AutomationProperties.LiveSetting="Assertive">
+                <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="ERROR" FontSize="16" FontWeight="Bold" VerticalAlignment="Top"
+                               Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+                    <ScrollViewer Grid.Column="1" MaxHeight="112"
+                                  HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                        <TextBlock Text="{x:Bind ViewModel.FooterStatusMessage, Mode=OneWay}"
+                                   FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" IsTextSelectionEnabled="True"
+                                   Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+                    </ScrollViewer>
                 </Grid>
             </Border>
         </Grid>

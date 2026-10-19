@@ -7,6 +7,7 @@
 
 using System;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using CircuitAssistant.Models;
 using CircuitAssistant.Services;
@@ -25,31 +26,40 @@ public class SecondOrderRlcStrategy : ICircuitStrategy
         _subtype = subtype;
     }
 
-    public Task<PedagogicalSolution> SolveAsync(ElectricalNetlist netlist, AnalysisParameters parameters)
+    public Task<PedagogicalSolution> SolveAsync(ElectricalNetlist netlist, AnalysisParameters parameters, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var solution = new PedagogicalSolution
         {
             IsSuccess = true,
             TopologyType = TopologyType,
             SubtypeName = _subtype,
-            CircuitTitle = $"二阶 RLC {(_subtype == "ParallelRlc" ? "并联" : "串联")} 谐振与瞬态特性严谨推导"
+            CircuitTitle = $"二阶 RLC {(_subtype == "ParallelRlc" ? "并联" : "串联")} 谐振与瞬态特性严谨推导",
         };
 
         var res = netlist.Elements.Values.FirstOrDefault(e => e.Type == ElementType.Resistor);
         var ind = netlist.Elements.Values.FirstOrDefault(e => e.Type == ElementType.Inductor);
-        var cap = netlist.Elements.Values.FirstOrDefault(e => e.Type == ElementType.Capacitor);
-        var src = netlist.Elements.Values.FirstOrDefault(e => e.Type is ElementType.DcVoltageSource or ElementType.AcVoltageSource);
-
-        double r = (res != null) ? GetSiValue(res) : 100.0;
-        double l = (ind != null) ? GetSiValue(ind) : 10e-3; // 10 mH
-        double c = (cap != null) ? GetSiValue(cap) : 1e-6;  // 1 uF
-        double vs = (src != null) ? GetSiValue(src) : 10.0;
-
-        if (r < 1e-6) r = 0.01;
-        if (l < 1e-12) l = 1e-6;
-        if (c < 1e-15) c = 1e-12;
+        var cap = netlist.Elements.Values.FirstOrDefault(e => e.Type is ElementType.Capacitor or ElementType.CapacitorPolarized);
 
         bool isParallel = _subtype == "ParallelRlc";
+        var branches = netlist.Branches;
+        var passive = branches.Where(b => b.ElementType is ElementType.Resistor or ElementType.Inductor or ElementType.Capacitor or ElementType.CapacitorPolarized).ToList();
+        bool samePair = passive.Count == 3 && passive.All(b =>
+            new[] { b.PositiveNode.Index, b.NegativeNode.Index }.OrderBy(n => n)
+            .SequenceEqual(new[] { passive[0].PositiveNode.Index, passive[0].NegativeNode.Index }.OrderBy(n => n)));
+        var allowed = isParallel
+            ? new[] { ElementType.Resistor, ElementType.Inductor, ElementType.Capacitor, ElementType.CapacitorPolarized, ElementType.Ground, ElementType.DcCurrentSource, ElementType.AcCurrentSource }
+            : new[] { ElementType.Resistor, ElementType.Inductor, ElementType.Capacitor, ElementType.CapacitorPolarized, ElementType.Ground, ElementType.DcVoltageSource, ElementType.AcVoltageSource };
+        if (res == null || ind == null || cap == null || passive.Count != 3 || branches.Count - passive.Count > 1 ||
+            netlist.Elements.Values.Any(e => !allowed.Contains(e.Type)) ||
+            (isParallel ? !samePair || branches.Any(b => b.PositiveNode.Index != passive[0].PositiveNode.Index && b.PositiveNode.Index != passive[0].NegativeNode.Index ||
+                b.NegativeNode.Index != passive[0].PositiveNode.Index && b.NegativeNode.Index != passive[0].NegativeNode.Index)
+                : netlist.Nodes.Any(n => n.ConnectedBranches.Count != 2)))
+            return Task.FromResult(PedagogicalSolution.Failure(TopologyType,
+                "当前 RLC 策略只支持一个 R、L、C 的标准串联回路或并联回路（并联采用电流源激励），不支持复杂二阶网络。"));
+        double r = GetSiValue(res), l = GetSiValue(ind), c = GetSiValue(cap);
+        if (!double.IsFinite(r) || !double.IsFinite(l) || !double.IsFinite(c) || r <= 0 || l <= 0 || c <= 0)
+            return Task.FromResult(PedagogicalSolution.Failure(TopologyType, "R、L、C 必须是有限正数。"));
 
         // 1. Natural Frequency
         double omega0 = 1.0 / Math.Sqrt(l * c);
@@ -58,39 +68,57 @@ public class SecondOrderRlcStrategy : ICircuitStrategy
         // 2. Attenuation alpha & Quality factor Q
         double alpha = isParallel ? (1.0 / (2.0 * r * c)) : (r / (2.0 * l));
         double q = isParallel ? (r * Math.Sqrt(c / l)) : ((1.0 / r) * Math.Sqrt(l / c));
-        if (q < 1e-9) q = 0.01;
+        if (!double.IsFinite(omega0) || !double.IsFinite(alpha) || !double.IsFinite(q) || omega0 <= 0 || alpha <= 0 || q <= 0)
+            return Task.FromResult(PedagogicalSolution.Failure(TopologyType, "RLC 参数超出可计算范围。"));
         double bw = f0 / q;
 
         // 3. Characteristic Roots & Damping Regime
         double discriminant = alpha * alpha - omega0 * omega0;
+        if (!double.IsFinite(bw) || !double.IsFinite(discriminant))
+            return Task.FromResult(PedagogicalSolution.Failure(TopologyType, "RLC 频率或判别式超出数值范围。"));
+        bool critical = Math.Abs(alpha - omega0) <= 1e-8 * Math.Max(alpha, omega0);
+        if (critical) discriminant = 0;
         string regime;
         string rootsLatex;
         string rootsValue;
 
-        if (Math.Abs(discriminant) < 1e-6 || Math.Abs(alpha - omega0) < 1e-4)
+        // Display formatting (user convention 2026-10-18): every visible number keeps
+        // at most two decimals and uses the textbook engineering unit; the structured
+        // ω0/α/Q/f0/BW values above stay full precision for the report/benchmark layer.
+        string f0Text = TeachingDisplay.Text(f0, QuantityKind.Frequency);
+        string bwText = TeachingDisplay.Text(bw, QuantityKind.Frequency);
+        string qText = TeachingDisplay.Plain(q);
+        string omega0Text = TeachingDisplay.Plain(omega0);
+        string alphaText = TeachingDisplay.Plain(alpha);
+        string omega0Latex = TeachingDisplay.LatexNumber(omega0, QuantityKind.Ratio) + @"\text{ rad/s}";
+        string alphaLatex = TeachingDisplay.LatexNumber(alpha, QuantityKind.Ratio) + @"\text{ s}^{-1}";
+        string f0Latex = TeachingDisplay.Latex(f0, QuantityKind.Frequency);
+        string bwLatex = TeachingDisplay.Latex(bw, QuantityKind.Frequency);
+
+        if (critical)
         {
             regime = "临界阻尼 (Critically Damped)";
-            rootsLatex = $@"s_1 = s_2 = -\alpha = -{ScientificNotationFormatter.ToLatexScientific(alpha)}\text{{ s}}^{{-1}}";
-            rootsValue = $"重根 s = -{ScientificNotationFormatter.ToUnicodeScientific(alpha)} s⁻¹";
+            rootsLatex = $@"s_1 = s_2 = -\alpha = -{alphaLatex}";
+            rootsValue = $"重根 s = -{alphaText} s⁻¹";
         }
         else if (discriminant > 0)
         {
             regime = "过阻尼 (Overdamped)";
             double s1 = -alpha + Math.Sqrt(discriminant);
             double s2 = -alpha - Math.Sqrt(discriminant);
-            rootsLatex = $@"s_1 = {ScientificNotationFormatter.ToLatexScientific(s1)},\quad s_2 = {ScientificNotationFormatter.ToLatexScientific(s2)}\text{{ s}}^{{-1}}";
-            rootsValue = $"两实根 s1={ScientificNotationFormatter.ToUnicodeScientific(s1)}, s2={ScientificNotationFormatter.ToUnicodeScientific(s2)}";
+            rootsLatex = $@"s_1 = {TeachingDisplay.LatexNumber(s1, QuantityKind.Ratio)},\quad s_2 = {TeachingDisplay.LatexNumber(s2, QuantityKind.Ratio)}\text{{ s}}^{{-1}}";
+            rootsValue = $"两实根 s1={TeachingDisplay.Plain(s1)} s⁻¹, s2={TeachingDisplay.Plain(s2)} s⁻¹";
         }
         else // Underdamped
         {
             regime = "欠阻尼 (Underdamped)";
             double omegaD = Math.Sqrt(omega0 * omega0 - alpha * alpha);
             double overshoot = Math.Exp(-Math.PI * alpha / omegaD) * 100.0;
-            rootsLatex = $@"s_{{1, 2}} = -\alpha \pm j\omega_d = -{ScientificNotationFormatter.ToLatexScientific(alpha)} \pm j{ScientificNotationFormatter.ToLatexScientific(omegaD)}\text{{ rad/s}}";
-            rootsValue = $"共轭复根: -{ScientificNotationFormatter.ToUnicodeScientific(alpha)} ± j{ScientificNotationFormatter.ToUnicodeScientific(omegaD)} rad/s (超调量 {overshoot:F1}%)";
+            rootsLatex = $@"s_{{1, 2}} = -\alpha \pm j\omega_d = -{alphaLatex} \pm j{TeachingDisplay.LatexNumber(omegaD, QuantityKind.Ratio)}\text{{ rad/s}}";
+            rootsValue = $"共轭复根: -{alphaText} ± j{TeachingDisplay.Plain(omegaD)} rad/s (超调量 {TeachingDisplay.Plain(overshoot)}%)";
         }
 
-        solution.SummaryText = $"二阶 RLC 谐振网络解算完成：固有角频率 ω0 = {ScientificNotationFormatter.ToLatexScientific(omega0)} rad/s (f0 = {ScientificNotationFormatter.ToLatexScientific(f0)} Hz)，衰减常数 α = {ScientificNotationFormatter.ToLatexScientific(alpha)}，品质因数 Q = {q:F2}。工作状态为【{regime}】。";
+        solution.SummaryText = $"二阶 RLC 谐振网络解算完成：固有角频率 ω0 = {omega0Text} rad/s (f0 = {f0Text})，衰减常数 α = {alphaText} s⁻¹，品质因数 Q = {qText}。工作状态为【{regime}】。";
 
         solution.QPoint = new QPointInfo
         {
@@ -101,14 +129,16 @@ public class SecondOrderRlcStrategy : ICircuitStrategy
             IsActiveRegion = false
         };
 
+        double lowerCutoff = 2 * f0 * f0 / (Math.Sqrt(bw * bw + 4 * f0 * f0) + bw);
+        double upperCutoff = (Math.Sqrt(bw * bw + 4 * f0 * f0) + bw) / 2;
         solution.AcParameters = new AcParametersInfo
         {
-            VoltageGain = $"Q = {q:F2}",
-            InputResistance = ScientificNotationFormatter.FormatWithUnit(r, "Ω"),
-            OutputResistance = ScientificNotationFormatter.FormatWithUnit(r, "Ω"),
-            LowerCutoffFreq = ScientificNotationFormatter.FormatWithUnit(Math.Max(0, f0 - bw / 2), "Hz"),
-            UpperCutoffFreq = ScientificNotationFormatter.FormatWithUnit(f0 + bw / 2, "Hz"),
-            Bandwidth = ScientificNotationFormatter.FormatWithUnit(bw, "Hz")
+            VoltageGain = $"Q = {qText}",
+            InputResistance = TeachingDisplay.Text(r, QuantityKind.Resistance),
+            OutputResistance = TeachingDisplay.Text(r, QuantityKind.Resistance),
+            LowerCutoffFreq = TeachingDisplay.Text(lowerCutoff, QuantityKind.Frequency),
+            UpperCutoffFreq = TeachingDisplay.Text(upperCutoff, QuantityKind.Frequency),
+            Bandwidth = bwText
         };
 
         // Step 1: Natural angular frequency
@@ -120,8 +150,8 @@ public class SecondOrderRlcStrategy : ICircuitStrategy
             MethodName = "LC 无阻尼固有谐振原理",
             Content = "求解无阻尼固有角频率 ω0 = 1/√(LC)。该参数仅由电感与电容的储能特性决定，代表回路无阻尼自由振荡角频率。",
             LatexFormula = @"\omega_0 = \frac{1}{\sqrt{LC}},\quad f_0 = \frac{\omega_0}{2\pi} = \frac{1}{2\pi\sqrt{LC}}",
-            SubstitutionFormula = $@"\omega_0 = \frac{{1}}{{\sqrt{{{ScientificNotationFormatter.ToLatexScientific(l)} \times {ScientificNotationFormatter.ToLatexScientific(c)}}}}} = {ScientificNotationFormatter.ToLatexScientific(omega0)}\text{{ rad/s}},\quad f_0 = {ScientificNotationFormatter.ToLatexScientific(f0)}\text{{ Hz}}",
-            ResultValue = $"f0 = {ScientificNotationFormatter.ToUnicodeScientific(f0)} Hz",
+            SubstitutionFormula = $@"\omega_0 = \frac{{1}}{{\sqrt{{{TeachingDisplay.Latex(l, QuantityKind.Inductance)} \times {TeachingDisplay.Latex(c, QuantityKind.Capacitance)}}}}} = {omega0Latex},\quad f_0 = {f0Latex}",
+            ResultValue = $"f0 = {f0Text}",
             Status = "Completed"
         });
 
@@ -138,8 +168,8 @@ public class SecondOrderRlcStrategy : ICircuitStrategy
             LatexFormula = isParallel
                 ? @"\alpha = \frac{1}{2RC},\quad Q = \omega_0 RC = R\sqrt{\frac{C}{L}} = \frac{\omega_0}{2\alpha}"
                 : @"\alpha = \frac{R}{2L},\quad Q = \frac{\omega_0 L}{R} = \frac{1}{R}\sqrt{\frac{L}{C}} = \frac{\omega_0}{2\alpha}",
-            SubstitutionFormula = $@"\alpha = {ScientificNotationFormatter.ToLatexScientific(alpha)}\text{{ s}}^{{-1}},\quad Q = {q:F3}",
-            ResultValue = $"Q = {q:F2}, α = {ScientificNotationFormatter.ToUnicodeScientific(alpha)} s⁻¹",
+            SubstitutionFormula = $@"\alpha = {alphaLatex},\quad Q = {qText}",
+            ResultValue = $"Q = {qText}, α = {alphaText} s⁻¹",
             Status = "Completed"
         });
 
@@ -167,10 +197,10 @@ public class SecondOrderRlcStrategy : ICircuitStrategy
             Content = $"比较衰减常数 α 与固有角频率 ω0（判别式 Δ = α² - ω0²）：当前系统处于【{regime}】。在此状态下阶跃响应表现为特定的瞬态时域曲线。",
             LatexFormula = discriminant > 0
                 ? @"f(t) = f(\infty) + A_1 e^{s_1 t} + A_2 e^{s_2 t}\quad (\alpha > \omega_0,\text{ 无振荡单调缓变})"
-                : (Math.Abs(discriminant) < 1e-6
+                : (critical
                     ? @"f(t) = f(\infty) + (A_1 + A_2 t) e^{-\alpha t}\quad (\alpha = \omega_0,\text{ 最快无超调恢复})"
                     : @"f(t) = f(\infty) + A e^{-\alpha t} \sin(\omega_d t + \theta)\quad (\alpha < \omega_0,\text{ 衰减正弦振荡})"),
-            SubstitutionFormula = $@"Q = {q:F2} \implies \text{{{regime}}}",
+            SubstitutionFormula = $@"Q = {qText} \implies \text{{{regime}}}",
             ResultValue = regime,
             Status = "Completed"
         });
@@ -184,8 +214,8 @@ public class SecondOrderRlcStrategy : ICircuitStrategy
             MethodName = "频域选择性与通频带分析",
             Content = "品质因数 Q 决定谐振回路的频率选择性：Q 越大，谐振曲线越尖锐，选择性越好，但通频带 BW 越窄。",
             LatexFormula = @"BW = \Delta f = \frac{f_0}{Q} = \frac{\alpha}{\pi}",
-            SubstitutionFormula = $@"BW = \frac{{{ScientificNotationFormatter.ToLatexScientific(f0)}}}{{{q:F2}}} = {ScientificNotationFormatter.ToLatexScientific(bw)}\text{{ Hz}}",
-            ResultValue = $"BW = {ScientificNotationFormatter.ToUnicodeScientific(bw)} Hz",
+            SubstitutionFormula = $@"BW = \frac{{{f0Latex}}}{{{qText}}} = {bwLatex}",
+            ResultValue = $"BW = {bwText}",
             Status = "Completed"
         });
 
@@ -194,11 +224,6 @@ public class SecondOrderRlcStrategy : ICircuitStrategy
 
     private static double GetSiValue(CircuitElement el)
     {
-        double multiplier = 1.0;
-        foreach (var opt in EngineeringUnits.ResistanceUnits) if (opt.Symbol == el.UnitSymbol) multiplier = opt.Multiplier;
-        foreach (var opt in EngineeringUnits.CapacitanceUnits) if (opt.Symbol == el.UnitSymbol) multiplier = opt.Multiplier;
-        foreach (var opt in EngineeringUnits.InductanceUnits) if (opt.Symbol == el.UnitSymbol) multiplier = opt.Multiplier;
-        foreach (var opt in EngineeringUnits.VoltageUnits) if (opt.Symbol == el.UnitSymbol) multiplier = opt.Multiplier;
-        return el.DisplayNumber * multiplier;
+        return NetlistExtractor.ConvertToBaseSi(el.Type, el.DisplayNumber, el.UnitSymbol);
     }
 }

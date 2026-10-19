@@ -19,9 +19,16 @@
         </Grid.RowDefinitions>
 
         <TitleBar x:Name="AppTitleBar" Title="电路教学辅助系统 (Circuit Learning Assistant)">
-            <TitleBar.IconSource>
-                <ImageIconSource ImageSource="Assets/AppIcon.ico" />
-            </TitleBar.IconSource>
+            <TitleBar.LeftHeader>
+                <Image
+                    Width="28"
+                    Height="28"
+                    Margin="4,0,2,0"
+                    IsHitTestVisible="False"
+                    Source="Assets/Square44x44Logo.scale-200.png"
+                    Stretch="Uniform"
+                    UseLayoutRounding="True" />
+            </TitleBar.LeftHeader>
         </TitleBar>
 
         <!-- Main Full-Width Workspace Frame -->

@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0-windows10.0.26100.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <NoWarn>MVVMTK0045</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+  </ItemGroup>
+
+  <!-- Verifies the 29 generated native .circuit teaching files: load -> validate ->
+       netlist -> classify -> solve, against the expectations documented in
+       projects/nonlinear-engine-and-circuit-models-design-20261018.md §9. -->
+  <ItemGroup>
+    <Compile Include="..\..\apps\desktop-winui\Models\CircuitElement.cs" Link="Models\CircuitElement.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Models\EngineeringUnit.cs" Link="Models\EngineeringUnit.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Models\AnalysisStep.cs" Link="Models\AnalysisStep.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Models\AnalysisResult.cs" Link="Models\AnalysisResult.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Models\LinearAnalysisModels.cs" Link="Models\LinearAnalysisModels.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Models\CircuitProjectData.cs" Link="Models\CircuitProjectData.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Models\CircuitWireSync.cs" Link="Models\CircuitWireSync.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Services\ScientificNotationFormatter.cs" Link="Services\ScientificNotationFormatter.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Services\TeachingDisplay.cs" Link="Services\TeachingDisplay.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Engine\**\*.cs" Link="Engine\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0-windows10.0.26100.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <NoWarn>MVVMTK0045</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+  </ItemGroup>
+
+  <!-- Console harness (not dotnet-test): links the production engine sources and
+       the display formatters, then scans every display text field of representative
+       teaching solutions for numbers with 3+ decimal places. Teaching convention
+       (2026-10-18): all displayed computed results keep at most two decimals. -->
+  <ItemGroup>
+    <Compile Include="..\..\apps\desktop-winui\Models\CircuitElement.cs" Link="Models\CircuitElement.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Models\EngineeringUnit.cs" Link="Models\EngineeringUnit.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Models\AnalysisStep.cs" Link="Models\AnalysisStep.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Models\AnalysisResult.cs" Link="Models\AnalysisResult.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Models\LinearAnalysisModels.cs" Link="Models\LinearAnalysisModels.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Models\CircuitProjectData.cs" Link="Models\CircuitProjectData.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Models\CircuitWireSync.cs" Link="Models\CircuitWireSync.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Services\ScientificNotationFormatter.cs" Link="Services\ScientificNotationFormatter.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Services\TeachingDisplay.cs" Link="Services\TeachingDisplay.cs" />
+    <Compile Include="..\..\apps\desktop-winui\Engine\**\*.cs" Link="Engine\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

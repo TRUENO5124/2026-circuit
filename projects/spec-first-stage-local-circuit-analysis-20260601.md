@@ -1,332 +1,83 @@
 ---
-spec_title: "第一阶段本地电路分析原型"
+spec_title: "WinUI 原生电路教学辅助系统：当前开发规格"
 spec_created_at: "2026-06-01"
-spec_revised_at: "2026-06-12"
-spec_reviewed_at: "2026-07-16"
-spec_source: "/spec"
-spec_issue_url:
-spec_issue_number:
-spec_executed: false
+spec_reviewed_at: "2026-10-19（耗尽型 MOS/JFET 与工作区校验修订、0.2.0-preview.1 发布后）"
 spec_execution_status: "partial"
-spec_execution_mode: "local-file-only"
-dedupe_status: "skipped: gh is not installed"
-quality_gate_status: "skipped: codex.exe returned Access is denied"
+spec_execution_mode: "local-workspace"
 ---
 
-# Epic：第一阶段本地电路分析原型
+# 当前开发规格与交付边界
 
-## 2026-07-16 复核状态
+本文替代早期 Web/HTML 主架构规格，用当前工作区实现校正任务状态。原始 Issue I1–I9、视觉方案及当时工具环境记录保存在[修订前归档](archive/2026-10-17-before-winui-doc-sync/spec-first-stage-local-circuit-analysis-20260601.md)，不再把过去“不是 Git 仓库”等描述当作当前环境。
 
-| Issue | 状态 | 当前证据/边界 |
+> 用户澄清：视觉仍需开发，放在本体完善后。第一轮已修改本体源码并执行构建与回归；第二轮（2026-10-17）继续实现通用线性网络 MNA 2.0、原生报告导出、Web CircuitGraph 单向导入与 30 题本地基准；第三至五轮完成 PNP、材料压降、标准符号、默认朝向与 ALT+X 镜像。**第六轮（2026-10-18）实现二极管非线性教学求解、MOSFET 平方律教学求解、BJT 共集电极、多级放大预留接口与明确拒绝，并生成 29 个原生 `.circuit` 教学电路文件。第七轮（2026-10-18）按用户反馈把显示统一为教材估算法（每步两位小数舍入并回代、后端精确值 `Exact*` 不显示）、全部题型显示值 ≤2 位小数、BJT/MOS 推导按 DC/AC 等效电路分组，并用 Win2D 自绘公式框替换 Unicode 文本转写；第六轮补充的“教材估算法对照/双口径”已被第七轮单一口径取代（历史见第六轮修订记录）。第八轮（2026-10-18）支持 BJT 信号源内阻 Rs/电解输入耦合电容/Aus（B07 教学变体可解）、修复保存工程时改写 ProjectName 的缺陷、维护 M2 Suite 7 并新增保存回归。第九轮（2026-10-18）让 BJT 小信号参数 r_bb'/r_be(h_ie) 可编辑并持久化（0=自动；题目给定 r_be 直接采用；引擎全部 BJT 子类型读取实际参数；检查器与参数设置两处编辑框；当轮 Nonlinear 913、M2 160），按用户要求本轮不做 ui-capture 窗口验收。** **2026-10-19 补全耗尽型 NMOS/PMOS 与 N/P 沟道 JFET 单管教学求解（共源/共源+Rs/共源旁路/共漏/共栅五类拓扑；增强/耗尽 MOS 用 Level-1 平方律、JFET 用 Shockley 方程 ID=IDSS·(1−VGS/VGS(off))²、K=IDSS/VGS(off)²；MOS K/λ 与 JFET IDSS 检查器可编辑并随工程持久化），并完成元器件工作区物理核验修订（BJT 无 Re 加载偏置方程、BE/BC 判据、MOS/JFET 分段模型+DC 负载线、二极管/FET Invalid）；发布阶段版本 0.2.0-preview.1，发布前全量控制台矩阵 20 组命令/4905 项断言全部通过（M2SolverChallenger 166/166、NonlinearCircuitChecks 1606/1606）。** 最新状态见[耗尽 MOS/JFET 实现记录](fet-depletion-jfet-strategies-20261019.md)、[工作区校验修订](operating-region-validation-20261019.md)与[第九轮本体修订记录](technical-code-fixes-20261018-round9.md)。
+
+## 1. 当前范围
+
+主交付对象为 WinUI 3 / .NET 9 原生桌面软件：人工绘制或加载教学模板、修改元件和导线、进程内 C# 求解（单只 NPN/PNP 教学策略含共射/共基/共集、二极管非线性教学策略、增强/耗尽型 NMOS/PMOS 与 N/P 沟道 JFET 单管放大策略 + 通用线性网络 MNA 2.0）、查看推导与结构化指标、保存工程、导出有限 SPICE 文本，以及原生导出四种格式的分析报告（Markdown/LaTeX+Circuitikz/Word/HTML）。可单向导入 Web/Python `CircuitGraph` JSON，并可直接打开 `examples/circuit-models/` 的 29 个原生教学电路；`tests/CircuitModelChecks -- --file <path>` 可对任意 `.circuit` 做单文件诊断。元件符号按 IEC/IEEE 315 与 Multisim VCC 参考统一为矢量符号库；二极管/BJT 支持硅管/锗管压降参数；MOS/JFET 参数在界面明确标注为阈值电压/夹断电压，MOS 的 K/λ 与 JFET 的 IDSS 可在检查器直接编辑并随工程文件保存/读回（旧工程缺省 0，JFET 求解前须补填有限正数）。**第七轮起教学结果显示为教材估算法**（分压偏置空载 `U_B` → `I_EQ→I_BQ→I_CQ→U_CEQ`，每个中间结果按显示单位最多两位小数舍入并代入下一步；公式不化简），后端戴维南精确值只保留在 `QPointInfo.Exact*`/步骤 `Values`，界面不显示、也不再并列双口径；全部题型（BJT/MOS/JFET + RC/RL/RLC/MNA/二极管/报告）显示值最多两位小数；推导按 DC/AC 等效电路分组展示（`SolutionPhase`/`StepGroups`，共射/共基 5 步、共集 6 步、MOSFET/JFET 7 步，电解电容极性核验归 DC 并重排 StepIndex）；公式框由 Win2D `CanvasControl` 自绘真排版（真角标/叠放分式/根号/矩阵/按宽度换行/自适应高度/基础字号 16，复制 LaTeX 保留）。**2026-10-19 工作区校验修订**：教学舍入链保留；BJT 用未舍入加载解及 BE/BC 偏置核验工作区，Re=0 改用含负载偏置回路，空载估算越界但加载解有效时切换含负载教学链；MOS/JFET 用未舍入分段模型及 DC 负载线核验；无效数值不映射为截止。见[修订记录](operating-region-validation-20261019.md)。**第八轮起 BJT 放大器支持信号源内阻 Rs**（"交流源与输入耦合电容之间恰一只电阻"的教材拓扑）与**电解输入耦合电容**（`+/-` 引脚识别、DC 相极性核验），识别到 Rs 时给出 `Aus=Av·Ri/(Rs+Ri)`、`τ1=(Rs+Ri)C1` 并在实时指标卡/报告显示"信号源内阻 Rs/源电压增益 Aus"两行；未覆盖电阻诊断给出元件 Id/网名与支持位置；保存工程保留 `ProjectName`（仅未命名工程回退文件名）。**第九轮起 BJT 小信号参数 r_bb'/r_be(h_ie) 可调**：元件/DTO 新增 `BjtRbb`/`BjtRbe`（Ω，0=自动：r_bb' 共射/共集 200 Ω、共基 50 Ω，r_be 按 Q 点计算；>0 题目给定直接采用），全部 BJT 子类型读取实际参数，rbe/h_ie 步骤文案/公式不再硬编码 200/50，步骤 `Values` 含 `rbb_ohm`/`rbe_ohm`/`rbe_source`；UI 在"元件参数检查器（选中 BJT）"与"参数设置 → 三极管模型与信号源特性"两处提供编辑框（宏参数与元件双向同步、0=自动、非法输入归零）；默认 0 时数值与第八轮一致；第九轮按用户要求不做窗口截图验收（仅控制台回归 + 构建）；2026-10-19 发布验证同样未做新的 ui-capture（控制台回归 + 构建 + 启动冒烟）。多级放大只预留 `IMultiStageAnalysis` 接口并明确拒绝，Cascade 求解未实现。具体接口见 [PROJECT.md](../PROJECT.md)。
+
+React 编辑器、Zod、FastAPI、SQLite 与 Python/SymPy 引擎仍保留，属于独立原型；其功能与格式不自动成为 WinUI 主软件的一部分。视觉识别仍在项目规划内，安排在软件本体完善后的阶段开发，本阶段暂不接入或验收。
+
+## 2. 历史 Issue 与当前实现的对应
+
+| 历史项 | 当前状态 | 原生主软件的实际位置与缺口 |
 |---|---|---|
-| I1 | 已完成 | Schema、18 类元件、3 个 Benchmark、校验和 JSON Schema 已实现 |
-| I2/I3 | 基础版已完成 | 5 个策略、MNA、安全求解器和 16 项引擎测试；题型覆盖仍有限 |
-| I4 | 基础版已完成 | FastAPI、SQLite、任务队列和 Worker 已实现 |
-| I5 | 部分完成 | 编辑器、参数编辑和拓扑校验可用；撤销/重做未实现 |
-| I6 | 后端完成、前端未闭环 | 会话/token 上传/SSE/捕获页存在；编辑器无 QR 入口 |
-| I7 | 已取消 | 2026-07-23 用户取消当前阶段视觉模块接入；技术方案仅保留为未来研究参考 |
-| I8 | 未完成 | 当前 3/30 个 Benchmark |
-| I9 | 部分完成 | KaTeX、步骤展示和 HTML 报告可用；PDF/LaTeX/Circuitikz 未实现 |
+| I1 数据模型/元件库 | 两套模型并存，新增单向导入 | C# 编辑模型、工程 DTO、电气网表、线性网络结构化结果已实现；Web 有 18 类 Zod 定义，原生有 25 个符号条目；`WebCircuitGraphImporter` 支持 Web→原生单向导入，无原生→Web 导出 |
+| I2/I3 策略/保护 | 原生单管全类型 + 二极管/MOSFET/JFET 教学策略 + MNA 2.0；第七轮补教材估算法显示与 DC/AC 分组；第八轮补 BJT Rs/电解电容/Aus；第九轮补 BJT r_bb'/r_be(h_ie) 可调；2026-10-19 补耗尽型 MOS/JFET 单管求解与工作区物理核验 | 专用 C# 策略：RC/RL、RLC、BJT（单只 NPN/PNP，共射/共基/共集，硅/锗压降；显示为教材估算法+两位小数；后端 `Exact*` 仅保留；推导 DC/AC 分组；**支持信号源内阻 Rs/电解输入耦合电容/Aus**；**r_bb'/r_be(h_ie) 可调，0=自动/题目给定直接采用**）、二极管非线性（9 类子类型，显示 ≤2 位小数）、增强/耗尽型 MOSFET 与 N/P 沟道 JFET（共源/共源+Rs/共源旁路/共漏/共栅五类拓扑；增强/耗尽 MOS 用 Level-1 平方律、JFET 用 Shockley 方程；K/λ/IDSS 可编辑并持久化；教材估算法 7 步、DC/AC 分组；暂不支持 Rs）、多级预留拒绝策略；另有 `MnaLinearStrategy`（复数 MNA 2.0：受控源/动态元件/戴维南/扫频）；快照后台求解、校验、15 秒等待上限、协作式取消与 MNA 回退已接入；Python 独立注册六个策略并有 SafeSolver |
+| I4 API/Worker | 独立原型已实现 | 不位于 WinUI 求解依赖链；不可作为原生任务调度已完成的证据 |
+| I5 编辑器 | 原生基础交互已实现 | Win2D、布线、分支、框选、撤销快照；属性与工程状态历史覆盖仍不完整 |
+| I6 手机上传 | 原型已有 QR/SSE 代码 | WinUI 未接入；捕获页 HTML 响应和编码已通过接口回归，真实手机链路待验证 |
+| I7 视觉识别 | 后续阶段开发 | 不创建/训练/部署视觉模块，不纳入当前验收 |
+| I8 30 题 Benchmark | **原生 30 题基准已完成** | `tests/NativeBenchmark30`：一阶/二阶/BJT/MNA 共 30 题独立手算，30/30 通过；`--roundtrip` 可导出为 CircuitGraph JSON 并经生产导入器回原生工程（31/31 网表等价）。Web/Python 原型的 30 题与图片集仍是另一目标，3 个原型样例已可原生导入 |
+| I9 公式/报告 | 原生报告已实现，公式改为 Win2D 真排版 | 原生 Markdown/LaTeX+Circuitikz/Word/HTML 报告、任意端口等效表与频响扫频；`MathFormulaView` 第七轮改为 Win2D `CanvasControl` 自绘（真上下角标/叠放分式/根号/bmatrix·pmatrix·cases·array/按宽度换行/自适应高度/基础字号 16/复制 LaTeX），限制为 array 竖线不画、超宽原子等比缩小、Canvas 文本不可选择、`\overline/\vec/\tilde` 不画装饰；仍不是 KaTeX/MathML 完整排版引擎；PDF 需浏览器打印或外部 xelatex |
 
-完整证据见 `projects/technical-document-review-20260716.md`。
+## 3. 原生实现清单
 
-## 背景
+| 模块 | 源码已实现 | 未覆盖的交付要求 |
+|---|---|---|
+| M1 模板 | 空白与共射、RC 暂态、阻容耦合、共基极工厂 | 任意模板标准化、第三方 `.sch` 兼容与全屏视觉验收 |
+| M2 提取/求解 | 并查集网表、分类、RC/RL、RLC、BJT（NPN/PNP，共射/共基/共集，硅/锗压降；教材估算法显示+两位小数；DC/AC 分组；**信号源内阻 Rs/电解输入耦合电容/Aus**；**r_bb'/r_be(h_ie) 可调，0=自动/题目给定直接采用，步骤 Values 含 `rbb_ohm`/`rbe_ohm`/`rbe_source`**）、二极管非线性（整流/滤波/限幅/钳位/检波/直流偏置，显示 ≤2 位小数）、增强/耗尽型 MOSFET 与 N/P 沟道 JFET 放大（共源/共源+Rs/共源旁路/共漏/共栅五类拓扑；增强/耗尽 MOS 平方律、JFET Shockley；K/λ/IDSS 可编辑并持久化；7 步教材估算法；暂不支持 Rs）、通用线性 MNA 2.0（受控源/动态/戴维南/相量/扫频）、多级明确拒绝与预留接口、教学步骤、校验与显式失败、专用策略→MNA 回退 | 任意拓扑正确率、多级/混合非线性级联求解、完整 ERC、外部 SPICE 数值对照 |
+| M3 画布 | WireTap、母线、线段调整、元件/导线跟随和选择；符号统一由 `SymbolGeometry` 按国际标准绘制（NPN/PNP、JFET、MOSFET、VCC、GND 等） | 避障布线、所有交互路径一致、符号像素级视觉验收、深层分支/删除/焦点端到端验收 |
+| M4 集成验证 | 原生构建与全量控制台回归/审计（**发布前实测 2026-10-19，0.2.0-preview.1**：M2 **166**、ChallengerRunner 131、M3 32、M3_4 9、EngineV2 306、报告 110、导入 172、符号 230、非线性 **1606**、29 文件 259、公式排版 411、显示两位小数 55，另独立审计 1359、30 题基准 30/30；生成器 `--verify` 29/29；全量矩阵 20 组命令/4905 项断言全部通过、Release x64 自包含 528 个运行文件、构建 0 警告/0 错误、启动冒烟通过、`npm test` 16/16）；`CircuitModelChecks -- --file` 单文件诊断可用；**B07 变体 + 普通模板已做真实窗口静态截图验收（含 Rs/Aus 两行与 AC 卡叠字修复，见第八轮记录 3.4）**；**第九轮与 2026-10-19 发布验证均未做新的 ui-capture 窗口验收** | 逐像素自动比对、深浅主题、其它 DPI、自动化交互/文件选择器、完整保存/关闭流程验收 |
+| 工程管理 | JSON 打开/保存/另存为、路径重置、修改标志、未保存提示、引用校验、原子替换、SPICE 导出、四种格式报告导出、Web CircuitGraph 单向导入；**保存保留 ProjectName（仅未命名工程回退文件名，第八轮修复）**；**BJT `BjtRbb`/`BjtRbe` 与 FET `MosfetK`/`MosfetLambda`/`JfetIdss` 随工程保存/读回（第九轮/2026-10-19，格式仍 1.2.0）** | 原生→Web 导出、完整版本迁移、第三方格式与全部窗口边界验收 |
 
-项目已经通过 `/plan-eng-review`，第一阶段范围调整为 **本地优先的结构化电路分析闭环**：30 题 benchmark、类型化电路图、人工拓扑校正、基础模电分析、LaTeX/步骤输出，以及局域网手机上传。视觉识别接入已于 2026-07-23 取消。
+“实现”表示有实际执行代码；“测试通过”指测试计划与历轮修订记录（当前 2026-10-19 修订，见[耗尽 MOS/JFET 实现记录](fet-depletion-jfet-strategies-20261019.md)、[工作区校验修订](operating-region-validation-20261019.md)与[第九轮修订记录](technical-code-fixes-20261018-round9.md)）中列出的控制台断言。没有将所有原始工业 EDA 标准和要求勾选为完成。
 
-已验证依据：
-
-- 范围已在 `projects/wzh-no-git-worktree-eng-review-20260529-021023.md:12` 中收窄为本地优先 MVP。
-- 类型化电路图是 `projects/wzh-no-git-worktree-eng-review-20260529-021023.md:27` 中的唯一事实来源。
-- 2026-05-29 评审时目录没有前端、后端或测试框架；该描述是历史基线，不再代表当前状态。
-
-## 子 Issue
-
-| ID | 标题 | 优先级 | 范围 |
-|---|---|---:|---|
-| I1 | 初始化 TypeScript/Zod schema、元件库和 benchmark 样例 | P1 | 第一个可执行 issue |
-| I2 | 实现第一批分析流程策略 | P1 | 依赖 I1，技术论证详见 `projects/analysis-engine-technical-report.md` |
-| I3 | 加入求解器限制和警告传递 | P1 | 依赖 I2，三重保护机制详见技术论证报告 |
-| I4 | 构建本地 API、任务队列和 worker 循环 | P1 | 依赖 I1 |
-| I5 | 构建电路图编辑器外壳和拓扑校正 | P2 | 依赖 I1，技术论证详见 `projects/presentation-layer-technical-report.md` |
-| I6 | 加入局域网手机上传流程 | P2 | 依赖 I4，QR+SSE 方案详见技术论证报告 |
-| I7 | 加入 YOLOv8 + PaddleOCR 图像到候选拓扑流程 | 已取消 | 不纳入当前阶段交付；下方内容仅作历史方案参考 |
-| I8 | 将 benchmark 从 3 个样例扩展到 30 题 | P1 | 依赖 I1/I2，电路图使用人工结构化录入 |
-| I9 | 将结构化分析渲染为 LaTeX、解释和标注 | P2 | 依赖 I2，KaTeX 渲染 + 报告导出详见技术论证报告 |
-
-## 依赖图
+## 4. 当前端到端路径
 
 ```text
-I1 数据模型与元件库
-├─> I2 分析流程策略 ──> I3 求解器限制
-│                    └─> I9 LaTeX/解释/标注渲染
-├─> I4 本地 API/任务队列 ──> I6 手机上传
-├─> I5 编辑器外壳与人工拓扑校正
-└─> I8 30 题 benchmark 扩展（人工结构化录入）
-
-I7 视觉识别：已取消，不再参与当前依赖图
+启动 WinUI → 新建/载入模板（或导入 Web CircuitGraph）
+ → 放置/编辑/连线
+ → 快照后台提取 → 网表/参数校验 → 拓扑分类 → 专用策略 / MNA 2.0 回退 / 明确拒绝
+ → 分步公式（Win2D 真排版）、教材估算法两位小数指标、节点电位、任意端口等效、交流频响扫频
+ → 推导按 DC/AC 等效电路分组（BJT/MOS）
+ → 保存自有 JSON / 导出有限 SPICE 文本 / 导出 Markdown·LaTeX·Word·HTML 分析报告
 ```
 
-## 完成定义
-
-1. 本地应用可以用类型化图表示教材电路题。
-2. 元件定义驱动端口、参数、教学标签和后续分析映射。
-3. Benchmark 用例使用与编辑器和分析模块相同的图格式。
-4. 第一阶段范围保持不变：不做云端、不做账号系统、不做完整 EDA、不承诺任意电路。
-
----
-
-# Issue I1：初始化 TypeScript/Zod Schema、元件库和 Benchmark 样例
-
-## 背景
-
-这个 issue 创建整个项目的基础。后续分析、编辑器、视觉和 benchmark 工作都依赖同一套共享数据形状。没有这一层，后续模块会各自发明不兼容的图格式。技术方案论证详见 `projects/data-layer-technical-report.md`。
-
-## 当前状态
-
-I1 已完成：根目录已有 package manifest；`packages/schema`、`packages/components`、`benchmarks/examples`、校验脚本和自动化测试均已存在。当前工作区仍不是 Git 仓库。
-
-## 拟议变更
-
-初始化项目骨架并实现第一层共享数据层：
-
-```text
-package.json
-tsconfig.json
-packages/schema/
-packages/components/
-benchmarks/examples/
-scripts/validate-benchmarks.ts
-```
-
-使用 **TypeScript + Zod 作为事实来源**，并导出 JSON Schema 供 Python 和后续服务使用。
-
-## 数据模型
-
-核心 schema 必须定义：
-
-- `CircuitGraph`：`id`、`version`、`nodes`、`components`、`ports`、`connections`、`metadata`、`validationIssues`
-- `ComponentInstance`：`id`、`definitionId`、`label`、`ports`、`parameters`、`modelVariant`、`position?`
-- `ComponentDefinition`：`id`、`family`、`ports`、`parameters`、`allowedModelVariants`、`analysisTags`、`teachingTags`
-- `BenchmarkCase`：`id`、`title`、`source`、`problemText`、`imageRefs`、`circuitGraph`、`groundTruth`、`difficultyTags`
-
-## 首批元件库
-
-包含这些元件族：
-
-- 无源元件：电阻、电容、电感、变压器
-- 独立源：直流电压源、直流电流源、交流小信号电压源、交流小信号电流源
-- 受控源：压控电压源、压控电流源、流控电压源、流控电流源
-- 二极管：二极管
-- BJT：NPN、PNP
-- FET 家族：增强型 MOSFET、耗尽型 MOSFET、JFET
-
-注意：JFET 不应建模为 MOS 子类型；它属于更宽泛的 FET 家族。
-
-## Benchmark 样例
-
-创建 3 个完整样例：
-
-1. 二极管限幅或钳位电路
-2. BJT 共射静态工作点
-3. MOS 共源基础放大电路
-
-本 issue 暂不创建占位图片路径，也不验证教材图片。`imageRefs` 字段必须先保留真实教材图片引用能力，但具体图片引用、裁剪区域和识别验证要等用户提供教材照片后再补齐。
-
-## 验收标准
-
-1. `npm test` 验证所有 schema 单元测试。
-2. `npm run validate:benchmarks` 验证全部 3 个 benchmark 样例。
-3. 非法图会针对缺失端口、悬空节点、重复 id 和非法参数给出可操作错误。
-4. 元件定义包含端口、参数单位、必填/可选标记、模型变体、分析标签和教学标签。
-5. 从 Zod 导出 `CircuitGraph`、`ComponentDefinition` 和 `BenchmarkCase` 的 JSON Schema artifact。
-6. 本 issue 不实现云端、账号、UI 编辑器、图像识别或分析求解器。
-
-## 测试计划
-
-| 层级 | 测什么 | 数量 |
-|---|---|---:|
-| 单元测试 | Zod schema 接受合法的图、元件和 benchmark 对象 | +6 |
-| 单元测试 | Zod schema 拒绝重复 id、缺失端口、悬空连接和非法值 | +8 |
-| 集成测试 | 从磁盘验证所有 benchmark 样例 | +1 |
-| 契约测试 | 导出 JSON Schema artifacts 并验证文件存在 | +1 |
-
-## 回滚计划
-
-如果这个基础设计被证明不合适，在下游模块依赖它之前回滚 package 骨架和 schema 文件。本 issue 不引入持久用户数据或外部服务状态。
-
-## 工作量估算
-
-人工：约 2-3 天。  
-AI agent：约 6-10 小时。
-
-拆分：1 小时项目骨架，3 小时 schema 设计，2 小时元件定义，2 小时 benchmark 样例，2 小时测试和校验脚本。
-
-## 不在范围内
-
-- 真实教材图片识别
-- 完整 30 题 benchmark
-- 分析引擎
-- Web 编辑器
-- 手机上传
-- SPICE/Lcapy/SymPy 集成
-
-## 执行备注
-
-- 本次 `/spec` 按本地文件归档处理：当前目录不是 git 仓库，且 `gh` 未安装，因此没有创建 GitHub issue。
-- 质量门的密钥/敏感串检查已通过。
-- `codex.exe` 质量评分在沙箱内和提权后均返回 `Access is denied`，因此按 `/spec` 规则跳过质量门。
-
----
-
-# Issue I7：加入 YOLOv8 + PaddleOCR 图像到候选拓扑流程（已取消）
-
-> 状态：2026-07-23 取消接入，不纳入当前阶段实施、交付或验收。以下内容仅保留为历史技术方案参考。
-
-## 背景
-
-本 issue 原计划实现视觉管线，将教科书电路图照片转换为带置信度的候选拓扑 `CircuitGraph` JSON。技术方案已于 2026-06-12 完成论证，详见 `projects/yolo-paddleocr-circuit-recognition-technical-report.md`，但当前阶段不再实施。
-
-原工程评审（2026-05-29）中 Decision 2 描述为"传统图像处理 + 轻量目标检测 + OCR 辅助"，后曾细化为 **YOLOv8s + PaddleOCR PP-OCRv4 + OpenCV** 三层架构。该历史方案已取消，不再产生 `services/vision` 模块，也不影响其他 Issue 的实现。
-
-## 当前状态
-
-- I1 已完成：`packages/schema` 定义了 `CircuitGraph`、`ComponentInstance` 等核心类型。
-- I7 已取消，不创建 `services/vision`，不接入 API Worker 或编辑器。
-- 仓库无训练数据集、领域模型、视觉推理代码或项目精度报告。
-
-## 技术方案概要
-
-### 三层架构
-
-```text
-输入图像 (JPG/PNG)
-    │
-    ▼
-┌─────────────────────┐
-│ OpenCV 预处理层      │  灰度化 → 自适应二值化 → 形态学去噪 → 透视校正
-└──────────┬──────────┘
-           ▼
-┌─────────────────────┐
-│ YOLOv8 目标检测层    │  CSPDarknet(C2f) + PAN-FPN + Decoupled Anchor-Free Head
-│ (~6 MB ONNX)        │  输出: bbox + 类别(15-19类) + 置信度
-│ CPU: ~100-150ms/帧   │  mAP@0.5 预期 ≥95%
-└──────────┬──────────┘
-           ▼
-┌─────────────────────┐
-│ PaddleOCR 参数识别层  │  DB++ 文本检测 + SVTR_HGNet 文本识别
-│ (~15 MB ONNX)        │  输出: 元件标注文本 (如 "R1=10kΩ")
-│ CPU: ~150-300ms/帧   │  准确率预期 ≥90%
-└──────────┬──────────┘
-           ▼
-┌─────────────────────┐
-│ OpenCV 拓扑提取层     │  FLD 线段检测 + 节点聚类 + CircuitGraph 构建
-└──────────┬──────────┘
-           ▼
-  CircuitGraph JSON (对齐 packages/schema)
-```
-
-### 关键技术选型理由
-
-| 决策 | 选型 | 理由 |
-|------|------|------|
-| 元件检测 | YOLOv8s | PCB 检测文献 mAP 93%–97%；COCO 预训练微调仅需 200–500 张；CPU 推理 ~100–150ms |
-| 参数 OCR | PaddleOCR PP-OCRv4 | 中英文混排 SOTA；模型仅 ~15MB；可定制电路领域字典微调 |
-| 统一推理 | ONNX Runtime | 避免同时安装 PyTorch + PaddlePaddle；总模型 ~40MB |
-| 拓扑提取 | OpenCV FLD | 快速线段检测 + 共线段合并；配合节点聚类提取连接关系 |
-
-## 拟议目录结构
-
-```text
-services/vision/
-├── models/                    # ONNX 模型文件
-│   ├── yolov8s_circuit.onnx  # 微调后的 YOLOv8s (~6MB)
-│   ├── ppocrv4_det.onnx      # PaddleOCR 文本检测 (~3.5MB)
-│   └── ppocrv4_rec.onnx      # PaddleOCR 文本识别 (~10.5MB)
-├── dict/
-│   └── circuit_dict.txt       # 电路参数专用字典 (Ω/β/μ 等)
-├── src/
-│   ├── preprocess.py          # OpenCV 预处理
-│   ├── detector.py            # YOLOv8 推理 + 后处理
-│   ├── ocr.py                 # PaddleOCR 推理 + 字典微调
-│   ├── topology.py            # FLD 线段检测 + 节点聚类
-│   ├── param_parser.py        # 参数文本解析 + 规则纠正
-│   ├── pipeline.py            # 端到端管线串联
-│   └── types.py               # 检测结果类型定义 (与 schema 对齐)
-├── training/
-│   ├── data.yaml              # YOLO 训练配置
-│   ├── train_yolo.py          # YOLOv8 微调脚本
-│   ├── train_ocr.py           # PaddleOCR 微调脚本
-│   └── export_onnx.py         # ONNX 导出脚本
-├── data/
-│   ├── train/                 # 训练集 (images + labels)
-│   ├── val/                   # 验证集
-│   └── circuit_dict.txt       # 电路参数字典
-├── tests/
-│   ├── test_preprocess.py     # 预处理单元测试
-│   ├── test_detector.py       # 检测器单元测试
-│   ├── test_ocr.py            # OCR 单元测试
-│   ├── test_topology.py       # 拓扑提取单元测试
-│   └── test_pipeline.py       # 端到端管线集成测试
-└── requirements.txt           # Python 依赖
-```
-
-## 子任务分解
-
-| 子任务 | 描述 | 工时 | 前置依赖 |
-|--------|------|------|----------|
-| T8a | 冻结 16 个视觉类到 18 个元件类型的映射，在 50–100 张标注图上完成 YOLOv8n/s 微调 POC | 2–4 天 | 无 |
-| T8b | 收集 200–500 张教科书电路图，分别完成 YOLO 元件标注与 PaddleOCR 文字标注 | 1–2 周 | 无 |
-| T8c | YOLOv8s 微调训练 + ONNX 导出 | 3–5 天 | T8a, T8b |
-| T8d | PaddleOCR v6 基线评测、字符字典核对与识别模型微调 | 3–5 天 | T8a |
-| T8e | OpenCV 预处理管线 + FLD 线段检测 + 节点聚类 | 1 周 | 无 |
-| T8f | 三模块串联 + 参数后处理 + 规则纠正 | 1 周 | T8c, T8d, T8e |
-| T8g | 端到端管线联调 + 10 张基准题测试 | 3–5 天 | T8f |
-
-## 验收标准
-
-1. YOLOv8 元件检测 mAP@0.5 ≥95%（在验证集上）。
-2. PaddleOCR 元件参数识别准确率 ≥90%（在验证集上）。
-3. 节点连接识别准确率 ≥85%。
-4. 低置信度 / 可疑点召回率 ≥90%。
-5. 端到端推理速度：单图全管线在 CPU 上 ≤2 秒。
-6. 输出的候选拓扑 JSON 符合 `packages/schema` 的 `CircuitGraph` 类型定义。
-7. 10 张基准题中至少 8 张能正确识别出主要元件和拓扑结构。
-
-## 测试计划
-
-| 层级 | 测什么 | 数量 |
-|------|--------|------|
-| 单元测试 | OpenCV 预处理输出格式正确 | +3 |
-| 单元测试 | YOLOv8 检测输出 bbox + 类别 + 置信度 | +4 |
-| 单元测试 | PaddleOCR 识别输出文本 + 置信度 | +3 |
-| 单元测试 | 参数解析器正确提取元件 ID、值、单位 | +5 |
-| 单元测试 | 拓扑提取输出有效的 CircuitGraph | +3 |
-| 集成测试 | 端到端管线对 10 张基准题的识别精度 | +1 |
-| 性能测试 | 单图推理速度 ≤2 秒 (CPU) | +1 |
-
-## 风险与缓解
-
-| 风险 | 缓解策略 |
-|------|----------|
-| 训练数据不足 | 合成数据生成 (KiCad → YOLO 标注)；Mosaic/MixUp 增强 |
-| 数学符号 OCR 错误 | 电路领域字典微调；后处理规则纠正 (R→Ω, C→F) |
-| 导线检测不准 | FLD + 共线段合并；用户交互确认兜底 |
-| Windows GPU 不兼容 | 使用 CPU 推理；ONNX Runtime 替代原生框架 |
-
-## 工作量估算
-
-总工时：7–10 周。其中数据集构建 1–2 周，模型训练 3–4 周，管线集成 3–4 周。
-
-## 不在范围内
-
-- 手写电路图识别（远期目标）
-- 实时视频流识别
-- 云端推理
-- 任意风格电路图（仅支持教科书印刷体）
-
-## 执行备注
-
-- 本 issue 需要 Python 环境，与 I1 的 TypeScript 环境独立。
-- 模型文件不纳入 git 版本控制，通过 `.gitignore` 排除 `services/vision/models/`。
-- 技术论证详见 `projects/yolo-paddleocr-circuit-recognition-technical-report.md`。
+文件路径是独立能力：打开自有 JSON → ToModel → 更新集合/模板宏 → 编辑；打开 Web/Python `CircuitGraph` JSON → 导入适配器 → 原生 DTO → 自动布局 → 未保存工程 → 求解/另存。原生→Web 导出、任意第三方 `.sch` 与项目 DTO 的双向互通仍未实现。
+
+## 5. 历轮修订与后续任务
+
+- [x] 通用线性网络 MNA 2.0：R/C/L、独立源、四种受控源、DC/AC 相量、任意端口 Req/戴维南、10 Hz–10 MHz 扫频与截止估计；结构化 `LinearNetwork` 结果。
+- [x] 专用策略拒绝时回退 MNA；取消令牌传入全部策略与 MNA 循环。
+- [x] 原生报告导出：Markdown、LaTeX+Circuitikz、Word `.docx`、自包含 HTML；报告信息/指标/原理图/步骤/结构化网络/SPICE。
+- [x] Web/Python `CircuitGraph` 单向导入适配器 + 3 个原型 benchmark 样例导入回归。
+- [x] 原生 30 题教材基准（30/30）与独立数值审计（历轮结果见[第七轮修订记录](technical-code-fixes-20261018-round7.md)）。
+- [x] 单只 PNP 三极管四类教学偏置分析与硅/锗管 VBE/VEB 压降；二极管/BJT 材料参数与工程持久化；元件符号按 IEC/IEEE 315/Multisim VCC 统一；MOS/JFET 参数含义在界面标注。
+- [x] 第六轮：二极管非线性教学求解（恒压降分段线性 + Shockley/Newton；9 类子类型）；MOSFET 平方律教学求解（Level-1，NMOS/PMOS 共源/共漏/共栅，K/λ 持久化；2026-10-19 已扩展为增强/耗尽 MOS 与 N/P 沟道 JFET 五类拓扑）；BJT 共集电极（射极跟随器）；多级放大 `MultiStageAmplifier/Cascade` 分类 + `IMultiStageAnalysis` 预留接口 + 明确拒绝；29 个原生 `.circuit` 教学电路文件（D01–D07、B01–B16、M01–M06）。
+- [x] 第六轮补充（第七轮已改为单一口径，保留为历史）：BJT 分压偏置"教材估算法对照"（第 1 步/摘要/Q 点双口径/结构化 Values，`R_th/((1+β)R_E)` 适用性判据，题3-12 场景回归）；`CircuitModelChecks -- --file <path>` 单文件诊断。
+- [x] **第七轮（2026-10-18）**：BJT/MOS 显示统一为教材估算法（每个中间结果按显示单位两位小数舍入并回代、公式不化简；题3-12 显示链 `U_B=11.63 V → I_EQ=53.85 μA → I_BQ=0.53 μA → I_CQ=53 μA → U_ECQ=11.82 V`），后端戴维南精确值仅保留在 `QPointInfo.Exact*`/步骤 `Values`（不显示、不再双口径）；全部题型显示值 ≤2 位小数；推导按 DC/AC 等效电路分组（`SolutionPhase`/`StepGroups`，共射/共基 5 步、共集 6 步、MOS 7 步，电解电容极性归 DC 并重排 StepIndex）；公式框改为 Win2D `CanvasControl` 自绘真排版（`Math/*`，基础字号 16、按宽度换行、内容自适应高度、复制 LaTeX 保留）；新增 `tests/MathFormulaChecks`（411/411）与 `tests/DisplayRoundingChecks`（55/55），`NonlinearCircuitChecks` 扩至 751/751，NativeBenchmark30 30/30（B08 参数按记录调整）。
+- [x] **第八轮（2026-10-18）**：BJT 策略支持信号源内阻 Rs（"交流源与输入耦合电容之间恰一只电阻"的拓扑，B07 变体 R6=50 Ω+电解 C3）与电解输入耦合电容（`+/-` 引脚识别、DC 相极性核验），新增 `Aus=Av·Ri/(Rs+Ri)`（共基 `Au·ri'/(Rs+ri')`）、`τ1=(Rs+Ri)C1` 与可诊断的未覆盖电阻文案；实时指标卡/报告在识别到 Rs 时显示"信号源内阻 Rs/源电压增益 Aus"两行（AC 指标卡 8 行 Grid；窗口验收首拍发现 7 行导致两行叠字，修复后重拍正常）；修复保存工程时把 `ProjectName` 改写为文件名的缺陷（D06 工程名恢复）；B07 教学文件变体与生成器定义同步（保留手工布局，`--verify` 10/10）；M2 Suite 7 改为反射 Win2D 公式管线并新增保存保留工程名断言；`NonlinearCircuitChecks` 822/822（+71）、`M2SolverChallenger` 156/156。
+- [x] **第八轮窗口截图验收**：用最终构建（2026-10-18 18:30:46，`bin\_verify\CircuitAssistant.exe`）在真实窗口（Win32 `PrintWindow`，150% DPI，1920×1118）打开 B07 变体求解成功（“6 个步骤”，无“未覆盖电阻”错误），DC 2 步（Q 点 + C3 极性 `U_C3=2.64 V`）+ AC 4 步、第 4 步含 `A_us=A_v·R_i/(R_s+R_i)`、实时指标 Rs/Aus 两行正常、普通模板不显示两行；证据 `tools/ui-verify/evidence/round8/`（bug 现场 `13_b07_ac_metrics_region.png` 与修复后 `11b/12b/13b/14b`）。静态截图级，未做逐像素比对/主题/其它 DPI/自动化交互。
+- [x] **第九轮（2026-10-18）**：BJT 小信号参数 r_bb'/r_be(h_ie) 可编辑并持久化——元件 `BjtRbb`（Ω，0=自动：共射/共集 200 Ω、共基 50 Ω）/`BjtRbe`（Ω，0=按 Q 点计算；>0 题目给定直接采用）与 DTO 字段（负数/非有限值拒绝，旧工程缺省 0，格式仍 1.2.0）；引擎全部 BJT 子类型读取实际参数，rbe/h_ie 步骤文案/公式/代入使用实际 rbb，第 2 步 Values 新增 `rbb_ohm`/`rbe_ohm`/`rbe_source`（computed|given）；UI 在元件参数检查器（选中 BJT）与参数设置 Group 3 两处新增编辑框（0=自动提示、宏参数双向同步、无效输入归零）；`BjtSmallSignalParameterChecks` 91 项 → `NonlinearCircuitChecks` 913/913（当轮）、`M2SolverChallenger` 160/160（当轮，+4：宏同步/默认自动/修改失效/保存读回）；默认 0 时数值与第八轮完全一致。**本轮按用户要求不做 ui-capture 窗口验收（仅控制台回归 + 构建）。**
+- [x] **2026-10-19（发布 0.2.0-preview.1）**：耗尽型 NMOS/PMOS 与 N/P 沟道 JFET 单管教学求解（共源/共源+Rs/共源旁路/共漏/共栅；JFET 用 Shockley 方程 ID=IDSS·(1−VGS/VGS(off))²、K=IDSS/VGS(off)²，增强/耗尽 MOS 用 Level-1 平方律；MOS K/λ 与 JFET IDSS 检查器可编辑并随工程持久化）；元器件工作区物理核验修订（BJT 无 Re 加载偏置方程、BE/BC 判据、MOS/JFET 分段模型+DC 负载线、二极管/FET Invalid）；发布前全量矩阵 20 组命令/4905 项断言全绿、构建 0 警告/0 错误、Release x64 自包含 528 个运行文件、启动冒烟通过。
+- [ ] **多级放大级联求解（仅预留接口，按用户要求列入后续项目规划，本阶段不实现）**；NPN+PNP 混合与 BJT+MOS 混合非线性网络求解；**MOSFET/JFET 放大器信号源内阻 Rs/Aus（第八轮仅 BJT）与小信号参数 r_bb'/r_be 可调（第九轮仅 BJT）**；大信号/失真分析。
+- [ ] 完整 ERC、任意拓扑正确率与外部 SPICE 数值对照、完整工程版本迁移。
+- [ ] KaTeX/MathML 级排版（基础二维排版已由 Win2D 实现：角标/分式/根号/矩阵/自动换行；`\overline/\vec/\tilde` 装饰、Canvas 文本选择、array 竖线等仍受限）、应用内自动等效电路图、PDF 直接生成。
+- [ ] 当前/历史真实窗口交互验收的剩余项：逐像素自动比对、深浅主题切换、150% 以外 DPI 与其它窗口尺寸、自动化交互断言、保存/关闭流程窗口操作；视觉数据与原生模型协议、识别管线、候选确认与分层评测。
+
+## 6. 验收标准
+
+基础自动化验证使用[当前测试计划](wzh-no-git-worktree-eng-review-test-plan-20260529-021023.md)。**发布前实测（2026-10-19，0.2.0-preview.1）：主项目 Debug/Release 构建 0 警告/0 错误，Release x64 自包含发布 528 个运行文件**；C# 常规回归 1156 项（M2 **166**、ChallengerRunner 131、M3 32、M3_4 9、EngineV2 306、报告 110、导入 172、符号 230），非线性引擎回归 **1606/1606**、29 个教学电路文件校验 **259/259**、公式排版 **411/411**、显示两位小数 **55/55**、独立数值审计 1359/1359、30 题基准 30/30；四个生成器 `--verify` 合计 29/29（7/7、6/6、10/10、6/6）；全量控制台矩阵 **20 组命令 / 4905 项断言全部通过**；`npm test`（独立 Web/Python 原型）16/16；发布目录启动冒烟通过。第九轮未复跑 `npm run check` 与 `NativeBenchmark30 -- --roundtrip`（历史 31/31）。**第九轮按用户要求不做 ui-capture 窗口验收；2026-10-19 发布验证同样未做新的 ui-capture**（仅控制台回归 + 构建 + 启动冒烟）；第七/八轮的静态截图验收（共射/题3-12/PNP/MOS、B07 变体 + 普通模板，证据 `tools/ui-verify/evidence/round8/`）不覆盖新增的 r_bb'/r_be、MOS K/λ 与 JFET IDSS 编辑框，也未做逐像素自动比对、深浅主题、其它 DPI 或自动化交互断言。这不代表上述待办完成，也没有得到任意电路正确率、TeX 渲染成功率或完整窗口 E2E 覆盖。
+
+2026-10-19 按授权只同步现行文档、未改源码/测试，并完成 0.2.0-preview.1 发布（Windows x64 自包含、528 个运行文件、启动冒烟通过）；第九轮曾按授权修改应用源码、测试与现行开发文档并保留历史记录。未修改正式申报材料，也没有推送 Git。

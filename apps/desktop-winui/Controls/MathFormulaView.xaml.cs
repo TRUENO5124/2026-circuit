@@ -1,15 +1,49 @@
+// ============================================================================
+// File: apps/desktop-winui/Controls/MathFormulaView.xaml.cs
+// Description: Win2D (CanvasControl) based renderer for the teaching engine's
+//              LaTeX formulas.
+//
+//              The control parses the LaTeX string into a MathNode tree
+//              (Math/MathLatexParser.cs), lays it out for the current width
+//              (Math/MathLayoutEngine.cs) and draws true sub/superscripts,
+//              stacked fractions, radicals, matrices and auto-wrapped lines
+//              with DirectWrite text. There is no horizontal clipping: the
+//              formula wraps at the available width and the control grows
+//              vertically to fit the content.
+//
+//              The copy-LaTeX button floats in the top-right corner and the
+//              colours follow the current theme accent foreground.
+// ============================================================================
+
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Text.RegularExpressions;
+using System.Diagnostics;
+using CircuitAssistant.MathRendering;
+using Microsoft.Graphics.Canvas;
+using Microsoft.Graphics.Canvas.Text;
+using Microsoft.Graphics.Canvas.UI.Xaml;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+using Windows.Foundation;
+using Windows.UI;
+using Windows.UI.Text;
 
 namespace CircuitAssistant.Controls;
 
 public sealed partial class MathFormulaView : UserControl
 {
+    /// <summary>Base formula font size in DIPs (visibly larger than the old 13.5 px text).</summary>
+    public const float BaseFontSize = 16f;
+
+    private const double FallbackWidth = 640.0;
+
+    /// <summary>Grid padding (4,2) contributes 8 DIPs horizontally.</summary>
+    private const float HorizontalPadding = 8f;
+
+    private static readonly string[] MathFontCandidates = { "Cambria Math", "Latin Modern Math", "STIX Two Math", "Cambria", "Segoe UI" };
+    private static readonly string[] CjkFontCandidates = { "Microsoft YaHei UI", "Microsoft YaHei", "SimSun", "Segoe UI" };
+
     public static readonly DependencyProperty FormulaProperty =
         DependencyProperty.Register(
             nameof(Formula),
@@ -17,448 +51,631 @@ public sealed partial class MathFormulaView : UserControl
             typeof(MathFormulaView),
             new PropertyMetadata(string.Empty, OnFormulaChanged));
 
-    public string Formula
-    {
-        get => (string)GetValue(FormulaProperty);
-        set => SetValue(FormulaProperty, value);
-    }
+    private IMathTextMeasurer _measurer = EstimateMathTextMeasurer.Instance;
+    private Win2DMathTextMeasurer? _win2DMeasurer;
+    private CanvasDevice? _device;
+    private MathLayoutEngine _engine = new(EstimateMathTextMeasurer.Instance);
+
+    private MathLayoutResult? _layout;
+    private MathNode? _ast;
+    private string _parsedFormula = string.Empty;
+    private string _lastLayoutFormula = string.Empty;
+    private float _lastLayoutWidth = -1f;
+
+    private bool _loaded;
+    private bool _selfCollapsed;
+    private double _controlWidth = FallbackWidth;
+    private float _copyReserve = 56f;
 
     public MathFormulaView()
     {
         InitializeComponent();
     }
 
+    /// <summary>The LaTeX source formula to render.</summary>
+    public string Formula
+    {
+        get => (string)GetValue(FormulaProperty);
+        set => SetValue(FormulaProperty, value);
+    }
+
     private static void OnFormulaChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         if (d is MathFormulaView view)
         {
-            view.UpdateContent();
+            view.InvalidateFormula(force: true);
         }
     }
 
-    private void UpdateContent()
+    // ==================================================================
+    // Layout orchestration
+    // ==================================================================
+    private void MathFormulaView_Loaded(object sender, RoutedEventArgs e)
     {
-        if (string.IsNullOrWhiteSpace(Formula))
+        _loaded = true;
+        if (ActualWidth > 1.0)
         {
-            FormulaText.Text = string.Empty;
+            _controlWidth = ActualWidth;
+        }
+
+        _copyReserve = MeasureCopyButtonReserve();
+        InvalidateFormula(force: true);
+    }
+
+    private void MathFormulaView_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        double width = e.NewSize.Width;
+        if (width <= 1.0)
+        {
             return;
         }
 
-        FormulaText.Text = FormatLatexToUnicode(Formula);
+        if (Math.Abs(width - _controlWidth) < 0.5)
+        {
+            // Height-only change caused by our own canvas height update: no relayout.
+            return;
+        }
+
+        _controlWidth = width;
+        InvalidateFormula(force: false);
     }
+
+    private void MathFormulaView_ActualThemeChanged(FrameworkElement sender, object args)
+    {
+        // Colours are resolved from the theme brush probe at draw time.
+        try
+        {
+            FormulaCanvas?.Invalidate();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[MathFormulaView] theme invalidate failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>Recomputes the layout for the current width and updates the canvas size.</summary>
+    private void InvalidateFormula(bool force)
+    {
+        if (!_loaded)
+        {
+            return;
+        }
+
+        double controlWidth = _controlWidth;
+        if (double.IsNaN(controlWidth) || controlWidth < 16.0)
+        {
+            controlWidth = FallbackWidth;
+        }
+
+        float canvasWidth = (float)Math.Max(60.0, controlWidth - HorizontalPadding);
+        float reserve = Math.Max(30f, _copyReserve);
+        float formulaWidth = Math.Max(80f, canvasWidth - reserve);
+
+        string formula = Formula ?? string.Empty;
+        bool empty = string.IsNullOrWhiteSpace(formula);
+
+        if (!force && !empty && _layout is not null &&
+            Math.Abs(formulaWidth - _lastLayoutWidth) < 0.5f &&
+            string.Equals(formula, _lastLayoutFormula, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _lastLayoutFormula = formula;
+        _lastLayoutWidth = formulaWidth;
+
+        if (empty)
+        {
+            _layout = null;
+            _ast = null;
+            _parsedFormula = string.Empty;
+            FormulaCanvas.Visibility = Visibility.Collapsed;
+            CopyButton.Visibility = Visibility.Collapsed;
+            FormulaCanvas.Width = 0;
+            FormulaCanvas.Height = 0;
+            // Collapse the whole control so an empty formula leaves no blank strip
+            // (and no extra StackPanel spacing) behind.
+            if (!_selfCollapsed)
+            {
+                _selfCollapsed = true;
+                Visibility = Visibility.Collapsed;
+            }
+
+            return;
+        }
+
+        if (_selfCollapsed)
+        {
+            _selfCollapsed = false;
+            Visibility = Visibility.Visible;
+        }
+
+        try
+        {
+            if (_ast is null || !string.Equals(formula, _parsedFormula, StringComparison.Ordinal))
+            {
+                _ast = MathLatexParser.Parse(formula);
+                _parsedFormula = formula;
+            }
+
+            _layout = _engine.Layout(_ast, formulaWidth, BaseFontSize);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[MathFormulaView] layout failed: {ex}");
+            _layout = null;
+        }
+
+        FormulaCanvas.Visibility = Visibility.Visible;
+        CopyButton.Visibility = Visibility.Visible;
+        FormulaCanvas.Width = canvasWidth;
+
+        float height = _layout is null ? 0f : (float)Math.Ceiling(_layout.Height);
+        if (height < 1f)
+        {
+            height = (float)Math.Ceiling(BaseFontSize * 1.7f);
+        }
+
+        FormulaCanvas.Height = height;
+        FormulaCanvas.Invalidate();
+    }
+
+    private float MeasureCopyButtonReserve()
+    {
+        try
+        {
+            CopyButton.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            double width = CopyButton.DesiredSize.Width;
+            if (width <= 0.0)
+            {
+                width = CopyButton.ActualWidth;
+            }
+
+            if (width <= 0.0)
+            {
+                return 56f;
+            }
+
+            return (float)Math.Clamp(Math.Ceiling(width) + 8.0, 34.0, 140.0);
+        }
+        catch
+        {
+            return 56f;
+        }
+    }
+
+    // ==================================================================
+    // Win2D resources / measurer
+    // ==================================================================
+    private void FormulaCanvas_CreateResources(CanvasControl sender, Microsoft.Graphics.Canvas.UI.CanvasCreateResourcesEventArgs args)
+    {
+        try
+        {
+            _device = sender.Device;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[MathFormulaView] canvas device unavailable: {ex.Message}");
+            _device = null;
+        }
+
+        if (_device is not null)
+        {
+            string mathFont = ProbeFontFamily(_device, MathFontCandidates, "x+1");
+            string cjkFont = ProbeFontFamily(_device, CjkFontCandidates, "\u72B6\u6001");
+            _win2DMeasurer = new Win2DMathTextMeasurer(_device, mathFont, cjkFont);
+            _measurer = _win2DMeasurer;
+            _engine = new MathLayoutEngine(_measurer);
+            _ast = null; // force re-parse under the real measurer
+            _lastLayoutWidth = -1f;
+        }
+
+        InvalidateFormula(force: true);
+        FormulaCanvas.Invalidate();
+    }
+
+    private static string ProbeFontFamily(CanvasDevice device, string[] candidates, string sampleText)
+    {
+        foreach (string candidate in candidates)
+        {
+            try
+            {
+                var format = new CanvasTextFormat
+                {
+                    FontFamily = candidate,
+                    FontSize = 16f,
+                    WordWrapping = CanvasWordWrapping.NoWrap,
+                };
+                _ = new CanvasTextLayout(device, sampleText, format, 0f, 0f);
+                return candidate;
+            }
+            catch
+            {
+                // Try the next family.
+            }
+        }
+
+        return candidates[^1];
+    }
+
+    // ==================================================================
+    // Drawing
+    // ==================================================================
+    private void FormulaCanvas_Draw(CanvasControl sender, CanvasDrawEventArgs args)
+    {
+        MathLayoutResult? layout = _layout;
+        if (layout is null || layout.IsEmpty)
+        {
+            return;
+        }
+
+        CanvasDrawingSession ds = args.DrawingSession;
+        ds.TextAntialiasing = CanvasTextAntialiasing.Auto;
+        Color color = ResolveFormulaColor();
+        Win2DMathTextMeasurer? textMeasurer = _win2DMeasurer;
+
+        foreach (MathTextFragment fragment in layout.Fragments)
+        {
+            if (string.IsNullOrEmpty(fragment.Text))
+            {
+                continue;
+            }
+
+            try
+            {
+                MathTextMetrics metrics = _measurer.Measure(fragment.Text, fragment.FontSize, fragment.Italic, fragment.Bold);
+                float top = fragment.BaselineY - metrics.Ascent;
+                CanvasTextFormat? format = textMeasurer?.GetFormat(
+                    fragment.FontSize,
+                    fragment.Italic,
+                    fragment.Bold,
+                    Win2DMathTextMeasurer.ContainsCjk(fragment.Text));
+                if (format is null)
+                {
+                    continue;
+                }
+
+                ds.DrawText(fragment.Text, fragment.X, top, color, format);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[MathFormulaView] draw text '{fragment.Text}' failed: {ex.Message}");
+            }
+        }
+
+        foreach (MathRule rule in layout.Rules)
+        {
+            try
+            {
+                DrawRule(ds, rule, color);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[MathFormulaView] draw rule {rule.Kind} failed: {ex.Message}");
+            }
+        }
+
+        foreach (MathDelimiter delimiter in layout.Delimiters)
+        {
+            try
+            {
+                DrawDelimiter(ds, delimiter, color);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[MathFormulaView] draw delimiter {delimiter.Style} failed: {ex.Message}");
+            }
+        }
+    }
+
+    private Color ResolveFormulaColor()
+    {
+        if (ColorProbe.Foreground is SolidColorBrush brush)
+        {
+            return brush.Color;
+        }
+
+        return ActualTheme == ElementTheme.Dark
+            ? Color.FromArgb(255, 118, 185, 237)
+            : Color.FromArgb(255, 0, 95, 184);
+    }
+
+    private static void DrawRule(CanvasDrawingSession ds, MathRule rule, Color color)
+    {
+        switch (rule.Kind)
+        {
+            case MathRuleKind.FractionBar:
+            case MathRuleKind.SqrtBar:
+            case MathRuleKind.MatrixRule:
+                ds.DrawLine(rule.X, rule.Y, rule.X + rule.Width, rule.Y, color, rule.Thickness);
+                return;
+
+            case MathRuleKind.SqrtRadical:
+            {
+                // Radical sign: small down-stroke then the long ascending stroke.
+                float x = rule.X;
+                float y = rule.Y;
+                float w = rule.Width;
+                float h = rule.Height;
+                ds.DrawLine(x + w * 0.10f, y + h * 0.30f, x + w * 0.42f, y + h * 0.22f, color, rule.Thickness);
+                ds.DrawLine(x + w * 0.42f, y + h * 0.22f, x + w * 0.58f, y + h, color, rule.Thickness);
+                ds.DrawLine(x + w * 0.58f, y + h, x + w, y, color, rule.Thickness);
+                return;
+            }
+
+            case MathRuleKind.Hat:
+            {
+                float x = rule.X;
+                float y = rule.Y;
+                float w = rule.Width;
+                float h = rule.Height;
+                ds.DrawLine(x, y + h, x + w * 0.5f, y, color, rule.Thickness);
+                ds.DrawLine(x + w * 0.5f, y, x + w, y + h, color, rule.Thickness);
+                return;
+            }
+
+            case MathRuleKind.Dot:
+                ds.FillCircle(rule.X, rule.Y, Math.Max(0.8f, rule.Width * 0.5f), color);
+                return;
+        }
+    }
+
+    private static void DrawDelimiter(CanvasDrawingSession ds, MathDelimiter delimiter, Color color)
+    {
+        float x = delimiter.X;
+        float y = delimiter.Y;
+        float w = Math.Max(2f, delimiter.Width);
+        float h = Math.Max(4f, delimiter.Height);
+        float thickness = Math.Max(1.1f, w * 0.16f);
+
+        switch (delimiter.Style)
+        {
+            case MathDelimiterStyle.Bar:
+                ds.DrawLine(x + w * 0.5f, y, x + w * 0.5f, y + h, color, thickness);
+                return;
+
+            case MathDelimiterStyle.SquareBracket:
+            {
+                if (delimiter.IsClosing)
+                {
+                    float xr = x + w * 0.72f;
+                    ds.DrawLine(xr, y, xr, y + h, color, thickness);
+                    ds.DrawLine(x + w * 0.18f, y, xr, y, color, thickness);
+                    ds.DrawLine(x + w * 0.18f, y + h, xr, y + h, color, thickness);
+                }
+                else
+                {
+                    float xl = x + w * 0.28f;
+                    ds.DrawLine(xl, y, xl, y + h, color, thickness);
+                    ds.DrawLine(xl, y, x + w * 0.82f, y, color, thickness);
+                    ds.DrawLine(xl, y + h, x + w * 0.82f, y + h, color, thickness);
+                }
+
+                return;
+            }
+
+            case MathDelimiterStyle.Parenthesis:
+            {
+                // Sample a sinusoidal arc; opening bulges left, closing bulges right.
+                const int segments = 12;
+                float previousX = 0f;
+                float previousY = y;
+                for (int i = 0; i <= segments; i++)
+                {
+                    float t = i / (float)segments;
+                    float px = delimiter.IsClosing
+                        ? x + w * (float)Math.Sin(Math.PI * t)
+                        : x + w * (1f - (float)Math.Sin(Math.PI * t));
+                    float py = y + h * t;
+                    if (i > 0)
+                    {
+                        ds.DrawLine(previousX, previousY, px, py, color, thickness);
+                    }
+
+                    previousX = px;
+                    previousY = py;
+                }
+
+                return;
+            }
+
+            case MathDelimiterStyle.Brace:
+            {
+                // Left curly brace drawn as a scalable polyline (no glyph scaling artefacts).
+                float midX = x + w * 0.45f;
+                float leftX = x + w * 0.05f;
+                float rightX = x + w * 0.95f;
+                float[] xs =
+                {
+                    rightX, midX, midX, leftX, midX, midX, rightX,
+                };
+                float[] ys =
+                {
+                    y,
+                    y + h * 0.13f,
+                    y + h * 0.42f,
+                    y + h * 0.5f,
+                    y + h * 0.58f,
+                    y + h * 0.87f,
+                    y + h,
+                };
+                for (int i = 1; i < xs.Length; i++)
+                {
+                    ds.DrawLine(xs[i - 1], ys[i - 1], xs[i], ys[i], color, thickness);
+                }
+
+                return;
+            }
+        }
+    }
+
+    // ==================================================================
+    // Copy LaTeX
+    // ==================================================================
+    private DispatcherTimer? _copyResetTimer;
 
     private void CopyLatex_Click(object sender, RoutedEventArgs e)
     {
-        if (string.IsNullOrWhiteSpace(Formula)) return;
+        if (string.IsNullOrWhiteSpace(Formula))
+        {
+            return;
+        }
+
         try
         {
             var dataPackage = new Windows.ApplicationModel.DataTransfer.DataPackage();
             dataPackage.SetText(Formula);
             Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dataPackage);
 
-            CopyIcon.Glyph = "\uE73E"; // Checkmark icon
+            CopyIcon.Glyph = "\uE73E"; // checkmark
             CopyText.Text = "已复制";
-            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
-            timer.Tick += (s, args) =>
+
+            _copyResetTimer?.Stop();
+            _copyResetTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+            _copyResetTimer.Tick += (s, args) =>
             {
                 CopyIcon.Glyph = "\uE8C8";
                 CopyText.Text = "LaTeX";
-                timer.Stop();
+                _copyResetTimer?.Stop();
             };
-            timer.Start();
+            _copyResetTimer.Start();
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[CopyLatex Exception] {ex.Message}");
+            Debug.WriteLine($"[MathFormulaView] copy LaTeX failed: {ex.Message}");
         }
     }
 
+    // ==================================================================
+    // Win2D text measurer
+    // ==================================================================
     /// <summary>
-    /// Converts a standard LaTeX mathematical formula string into rich Unicode plain text
-    /// formatted for Cambria Math rendering (including 2D matrices, Greek, square roots, and subscripts).
+    /// DirectWrite backed measurer. Falls back to <see cref="EstimateMathTextMeasurer"/>
+    /// per run if layout creation fails, so a missing font can never crash the UI.
+    /// CJK runs use a CJK-capable family so \text{饱和区} does not render tofu boxes.
     /// </summary>
-    public static string FormatLatexToUnicode(string latex)
+    private sealed class Win2DMathTextMeasurer : IMathTextMeasurer
     {
-        if (string.IsNullOrWhiteSpace(latex)) return string.Empty;
-        string text = latex.Trim();
+        private readonly CanvasDevice _device;
+        private readonly Dictionary<(int SizeKey, bool Italic, bool Bold, bool Cjk), CanvasTextFormat> _formats = new();
+        private readonly Dictionary<(string Text, int SizeKey, bool Italic, bool Bold), MathTextMetrics> _cache = new();
 
-        // 1. Environments: Format 2D matrices (\begin{bmatrix} ... \end{bmatrix})
-        text = FormatMatrixEnvironments(text);
-
-        // 2. Remove standard LaTeX environments and alignment markers
-        text = text.Replace(@"\begin{aligned}", "")
-                   .Replace(@"\end{aligned}", "")
-                   .Replace(@"\begin{array}", "")
-                   .Replace(@"\end{array}", "")
-                   .Replace(@"\left(", "(")
-                   .Replace(@"\right)", ")")
-                   .Replace(@"\left[", "[")
-                   .Replace(@"\right]", "]")
-                   .Replace(@"\left\{", "{")
-                   .Replace(@"\right\}", "}")
-                   .Replace(@"\left|", "|")
-                   .Replace(@"\right|", "|")
-                   .Replace(@"\{", "{")
-                   .Replace(@"\}", "}")
-                   .Replace(@"\quad", "   ")
-                   .Replace(@"\qquad", "      ")
-                   .Replace(@"\;", " ")
-                   .Replace(@"\,", " ")
-                   .Replace(@"\!", "")
-                   .Replace("~", " ")
-                   .Replace("&=", "= ")
-                   .Replace("&", " ");
-
-        // 3. Unpack formatting commands (\text, \mathrm, \mathbf, \mathit, \operatorname, \bm)
-        text = UnpackEnclosingCommands(text, [@"\\text", @"\\mathrm", @"\\mathbf", @"\\mathit", @"\\operatorname", @"\\bm", @"\\boldsymbol"]);
-
-        // 4. Greek Symbols (Case-sensitive, uppercase first)
-        text = ReplaceGreekSymbols(text);
-
-        // 5. Mathematical Operators & Relations
-        text = ReplaceMathOperators(text);
-
-        // 6. Balanced-brace Square Roots (\sqrt{...} -> √( ... ))
-        text = ReplaceSquareRoots(text);
-
-        // 7. Balanced-brace Fractions (\frac{num}{den} -> (num) / (den))
-        text = ReplaceFractions(text);
-
-        // 8. Powers and Superscripts
-        text = ReplacePowers(text);
-
-        // 9. Subscripts (Unicode Aware for Latin, Greek & Digits)
-        text = ReplaceSubscripts(text);
-
-        // 10. Line breaks: replace LaTeX '\\' with real environment newlines
-        string[] lines = text.Split(new[] { @"\\", "\r\n", "\n" }, StringSplitOptions.None);
-        for (int i = 0; i < lines.Length; i++)
+        public Win2DMathTextMeasurer(CanvasDevice device, string mathFontFamily, string cjkFontFamily)
         {
-            lines[i] = lines[i].TrimEnd();
+            _device = device;
+            MathFontFamily = mathFontFamily;
+            CjkFontFamily = cjkFontFamily;
         }
 
-        return string.Join(Environment.NewLine, lines);
-    }
+        public string MathFontFamily { get; }
 
-    private static string ReplaceGreekSymbols(string text)
-    {
-        // Uppercase Greek
-        text = text.Replace(@"\Delta", "Δ")
-                   .Replace(@"\Omega", "Ω")
-                   .Replace(@"\Theta", "Θ")
-                   .Replace(@"\Phi", "Φ")
-                   .Replace(@"\Sigma", "Σ")
-                   .Replace(@"\Pi", "Π");
+        public string CjkFontFamily { get; }
 
-        // Lowercase Greek
-        text = text.Replace(@"\omega", "ω")
-                   .Replace(@"\alpha", "α")
-                   .Replace(@"\beta", "β")
-                   .Replace(@"\tau", "τ")
-                   .Replace(@"\mu", "μ")
-                   .Replace(@"\pi", "π")
-                   .Replace(@"\delta", "δ")
-                   .Replace(@"\theta", "θ")
-                   .Replace(@"\phi", "φ")
-                   .Replace(@"\lambda", "λ")
-                   .Replace(@"\sigma", "σ")
-                   .Replace(@"\zeta", "ζ")
-                   .Replace(@"\gamma", "γ")
-                   .Replace(@"\epsilon", "ε")
-                   .Replace(@"\eta", "η");
-
-        return text;
-    }
-
-    private static string ReplaceMathOperators(string text)
-    {
-        return text.Replace(@"\pm", "±")
-                   .Replace(@"\mp", "∓")
-                   .Replace(@"\times", "×")
-                   .Replace(@"\cdot", "·")
-                   .Replace(@"\approx", "≈")
-                   .Replace(@"\parallel", "∥")
-                   .Replace(@"\le", "≤")
-                   .Replace(@"\leq", "≤")
-                   .Replace(@"\ge", "≥")
-                   .Replace(@"\geq", "≥")
-                   .Replace(@"\neq", "≠")
-                   .Replace(@"\ne", "≠")
-                   .Replace(@"\to", "→")
-                   .Replace(@"\rightarrow", "→")
-                   .Replace(@"\leftarrow", "←")
-                   .Replace(@"\infty", "∞")
-                   .Replace(@"\angle", "∠")
-                   .Replace(@"\circ", "°")
-                   .Replace(@"\partial", "∂")
-                   .Replace(@"\int", "∫")
-                   .Replace(@"\sum", "∑")
-                   .Replace(@"\max", "max")
-                   .Replace(@"\min", "min")
-                   .Replace(@"\ln", "ln")
-                   .Replace(@"\log", "log")
-                   .Replace(@"\exp", "exp")
-                   .Replace(@"\sin", "sin")
-                   .Replace(@"\cos", "cos")
-                   .Replace(@"\tan", "tan")
-                   .Replace(@"\arctan", "arctan");
-    }
-
-    public static string ReplaceSquareRoots(string input)
-    {
-        string text = input;
-        int maxIterations = 20;
-        while (maxIterations-- > 0)
+        public static bool ContainsCjk(string text)
         {
-            int idx = text.IndexOf(@"\sqrt");
-            if (idx == -1) break;
-
-            int braceStart = text.IndexOf('{', idx);
-            if (braceStart == -1 || braceStart > idx + 10) break;
-
-            int braceEnd = FindMatchingBrace(text, braceStart);
-            if (braceEnd == -1) break;
-
-            string inner = text.Substring(braceStart + 1, braceEnd - braceStart - 1).Trim();
-            inner = FormatLatexToUnicode(inner);
-
-            string replacement = $"√({inner})";
-            text = text.Substring(0, idx) + replacement + text.Substring(braceEnd + 1);
-        }
-        return text;
-    }
-
-    public static string ReplaceFractions(string input)
-    {
-        string text = input;
-        int maxIterations = 25;
-        while (maxIterations-- > 0)
-        {
-            int fracIdx = text.IndexOf(@"\frac");
-            if (fracIdx == -1) break;
-
-            int numStart = text.IndexOf('{', fracIdx);
-            if (numStart == -1) break;
-
-            int numEnd = FindMatchingBrace(text, numStart);
-            if (numEnd == -1) break;
-
-            int denStart = text.IndexOf('{', numEnd + 1);
-            if (denStart == -1 || denStart > numEnd + 4) break;
-
-            int denEnd = FindMatchingBrace(text, denStart);
-            if (denEnd == -1) break;
-
-            string num = text.Substring(numStart + 1, numEnd - numStart - 1).Trim();
-            string den = text.Substring(denStart + 1, denEnd - denStart - 1).Trim();
-
-            num = ReplaceFractions(num);
-            den = ReplaceFractions(den);
-
-            bool needsParenDen = den.Contains('+') || den.Contains('-') || den.Contains('×') || den.Contains('·') || den.Contains('∥') || den.Contains('/');
-            bool needsParenNum = num.Contains('+') || num.Contains('-');
-
-            string numPart = needsParenNum ? $"({num})" : num;
-            string denPart = needsParenDen ? $"({den})" : den;
-
-            string replacement = $"{numPart} / {denPart}";
-            text = text.Substring(0, fracIdx) + replacement + text.Substring(denEnd + 1);
-        }
-        return text;
-    }
-
-    private static string ReplacePowers(string text)
-    {
-        text = Regex.Replace(text, @"10\^\{([+-]?\d+)\}", m => "10" + ToSuperscript(m.Groups[1].Value));
-        text = Regex.Replace(text, @"\^\{([+-]?\d+)\}", m => ToSuperscript(m.Groups[1].Value));
-        text = Regex.Replace(text, @"\^([+-]?\d)", m => ToSuperscript(m.Groups[1].Value));
-        text = Regex.Replace(text, @"\^2\b", "²");
-        text = Regex.Replace(text, @"\^3\b", "³");
-        text = text.Replace("0^+", "0⁺").Replace("0^-", "0⁻");
-        return text;
-    }
-
-    private static string ReplaceSubscripts(string text)
-    {
-        text = Regex.Replace(text, @"([\p{L}\p{N}\)]|\b)_\{([^{}]+)\}", m =>
-        {
-            string baseChar = m.Groups[1].Value;
-            string sub = m.Groups[2].Value;
-            return FormatSubscriptToken(baseChar, sub);
-        });
-
-        text = Regex.Replace(text, @"([\p{L}\p{N}\)]|\b)_([0-9\p{L}])", m =>
-        {
-            string baseChar = m.Groups[1].Value;
-            string sub = m.Groups[2].Value;
-            return FormatSubscriptToken(baseChar, sub);
-        });
-
-        return text;
-    }
-
-    private static string FormatSubscriptToken(string baseChar, string sub)
-    {
-        bool allConvertible = sub.All(CanConvertToSubscript);
-        if (allConvertible)
-        {
-            return baseChar + ToSubscript(sub);
-        }
-        return $"{baseChar}_{sub}";
-    }
-
-    private static bool CanConvertToSubscript(char c)
-    {
-        return char.IsDigit(c) || c is '+' or '-' or 'a' or 'e' or 'h' or 'i' or 'j' or 'k' or 'l' or 'm' or 'n' or 'o' or 'p' or 'r' or 's' or 't' or 'u' or 'v' or 'x';
-    }
-
-    public static string FormatMatrixEnvironments(string text)
-    {
-        string pattern = @"\\begin\{(?:bmatrix|pmatrix|matrix)\}([\s\S]*?)\\end\{(?:bmatrix|pmatrix|matrix)\}";
-        return Regex.Replace(text, pattern, m =>
-        {
-            string matrixBody = m.Groups[1].Value.Trim();
-            string[] rawRows = matrixBody.Split(new[] { @"\\" }, StringSplitOptions.RemoveEmptyEntries);
-            if (rawRows.Length == 0) return "[ ]";
-
-            var grid = new List<List<string>>();
-            foreach (var r in rawRows)
+            foreach (char c in text)
             {
-                var cells = r.Split('&').Select(c => FormatLatexToUnicode(c.Trim())).ToList();
-                grid.Add(cells);
-            }
-
-            int rowCount = grid.Count;
-            int colCount = grid.Max(r => r.Count);
-
-            int[] colWidths = new int[colCount];
-            for (int c = 0; c < colCount; c++)
-            {
-                colWidths[c] = grid.Max(r => c < r.Count ? r[c].Length : 0);
-            }
-
-            var sb = new StringBuilder();
-            for (int r = 0; r < rowCount; r++)
-            {
-                string leftBracket = rowCount == 1 ? "[" : (r == 0 ? "⎡" : (r == rowCount - 1 ? "⎣" : "⎢"));
-                string rightBracket = rowCount == 1 ? "]" : (r == 0 ? "⎤" : (r == rowCount - 1 ? "⎦" : "⎥"));
-
-                sb.Append(leftBracket).Append(' ');
-                for (int c = 0; c < colCount; c++)
+                if (c >= '\u2E80')
                 {
-                    string cellVal = c < grid[r].Count ? grid[r][c] : "";
-                    sb.Append(cellVal.PadLeft(colWidths[c]));
-                    if (c < colCount - 1) sb.Append("  ");
+                    return true;
                 }
-                sb.Append(' ').Append(rightBracket);
-                if (r < rowCount - 1) sb.AppendLine();
             }
-            return sb.ToString();
-        });
-    }
 
-    private static string UnpackEnclosingCommands(string input, string[] commands)
-    {
-        string text = input;
-        foreach (var cmd in commands)
+            return false;
+        }
+
+        public CanvasTextFormat GetFormat(float fontSize, bool italic, bool bold, bool cjk)
         {
-            string prefix = cmd.StartsWith(@"\\") ? cmd.Substring(1) : cmd;
-            int maxLoops = 25;
-            while (maxLoops-- > 0)
+            int sizeKey = Math.Max(1, (int)MathF.Round(fontSize * 100f));
+            var key = (sizeKey, italic, bold, cjk);
+            if (_formats.TryGetValue(key, out CanvasTextFormat? cached))
             {
-                int cmdIdx = text.IndexOf(prefix + "{", StringComparison.Ordinal);
-                if (cmdIdx == -1) break;
-
-                int openIdx = cmdIdx + prefix.Length;
-                int closeIdx = FindMatchingBrace(text, openIdx);
-                if (closeIdx == -1) break;
-
-                string inner = text.Substring(openIdx + 1, closeIdx - openIdx - 1);
-                text = text.Substring(0, cmdIdx) + inner + text.Substring(closeIdx + 1);
+                return cached!;
             }
-        }
-        return text;
-    }
 
-    private static int FindMatchingBrace(string s, int openIndex)
-    {
-        int depth = 0;
-        for (int i = openIndex; i < s.Length; i++)
-        {
-            if (s[i] == '{') depth++;
-            else if (s[i] == '}')
+            var format = new CanvasTextFormat
             {
-                depth--;
-                if (depth == 0) return i;
+                FontFamily = cjk ? CjkFontFamily : MathFontFamily,
+                FontSize = sizeKey / 100f,
+                FontStyle = italic ? FontStyle.Italic : FontStyle.Normal,
+                FontWeight = new FontWeight { Weight = (ushort)(bold ? 700 : 400) },
+                WordWrapping = CanvasWordWrapping.NoWrap,
+            };
+            _formats[key] = format;
+            return format;
+        }
+
+        public MathTextMetrics Measure(string text, float fontSize, bool italic, bool bold)
+        {
+            if (fontSize <= 0f)
+            {
+                return new MathTextMetrics(0f, 0f, 0f);
             }
-        }
-        return -1;
-    }
 
-    public static string ToSuperscript(string s)
-    {
-        var sb = new StringBuilder();
-        foreach (char c in s)
-        {
-            sb.Append(c switch
+            float fallbackAscent = fontSize * 0.78f;
+            float fallbackDescent = fontSize * 0.24f;
+            if (string.IsNullOrEmpty(text))
             {
-                '-' => '⁻',
-                '+' => '⁺',
-                '0' => '⁰',
-                '1' => '¹',
-                '2' => '²',
-                '3' => '³',
-                '4' => '⁴',
-                '5' => '⁵',
-                '6' => '⁶',
-                '7' => '⁷',
-                '8' => '⁸',
-                '9' => '⁹',
-                _ => c
-            });
-        }
-        return sb.ToString();
-    }
+                return new MathTextMetrics(0f, fallbackAscent, fallbackDescent);
+            }
 
-    public static string ToSubscript(string s)
-    {
-        var sb = new StringBuilder();
-        foreach (char c in s)
-        {
-            sb.Append(c switch
+            int sizeKey = Math.Max(1, (int)MathF.Round(fontSize * 100f));
+            var key = (text, sizeKey, italic, bold);
+            if (_cache.TryGetValue(key, out MathTextMetrics cached))
             {
-                '0' => '₀',
-                '1' => '₁',
-                '2' => '₂',
-                '3' => '₃',
-                '4' => '₄',
-                '5' => '₅',
-                '6' => '₆',
-                '7' => '₇',
-                '8' => '₈',
-                '9' => '₉',
-                '+' => '₊',
-                '-' => '₋',
-                'a' or 'A' => 'ₐ',
-                'e' or 'E' => 'ₑ',
-                'h' or 'H' => 'ₕ',
-                'i' or 'I' => 'ᵢ',
-                'j' or 'J' => 'ⱼ',
-                'k' or 'K' => 'ₖ',
-                'l' or 'L' => 'ₗ',
-                'm' or 'M' => 'ₘ',
-                'n' or 'N' => 'ₙ',
-                'o' or 'O' => 'ₒ',
-                'p' or 'P' => 'ₚ',
-                'r' or 'R' => 'ᵣ',
-                's' or 'S' => 'ₛ',
-                't' or 'T' => 'ₜ',
-                'u' or 'U' => 'ᵤ',
-                'v' or 'V' => 'ᵥ',
-                'x' or 'X' => 'ₓ',
-                _ => c
-            });
+                return cached;
+            }
+
+            MathTextMetrics metrics;
+            try
+            {
+                CanvasTextFormat format = GetFormat(fontSize, italic, bold, ContainsCjk(text));
+                var layout = new CanvasTextLayout(_device, text, format, 0f, 0f);
+                CanvasLineMetrics[] lines = layout.LineMetrics;
+                MathTextMetrics estimate = EstimateMathTextMeasurer.Instance.Measure(text, fontSize, italic, bold);
+
+                // An unconstrained layout is a single line. If DirectWrite wrapped
+                // anyway (defensive: unexpected requested-size semantics), the
+                // reported width would be a per-line sliver, so trust the estimate.
+                if (lines.Length > 1)
+                {
+                    metrics = estimate;
+                }
+                else
+                {
+                    float width = (float)layout.LayoutBoundsIncludingTrailingWhitespace.Width;
+                    float ascent = fallbackAscent;
+                    float descent = fallbackDescent;
+                    if (lines.Length == 1)
+                    {
+                        CanvasLineMetrics line = lines[0];
+                        if (float.IsFinite(line.Baseline) && line.Baseline > 0f)
+                        {
+                            ascent = line.Baseline;
+                        }
+
+                        if (float.IsFinite(line.Height) && line.Height > ascent)
+                        {
+                            descent = line.Height - ascent;
+                        }
+                    }
+
+                    if (!float.IsFinite(width) || width <= 0f)
+                    {
+                        width = estimate.Width;
+                    }
+
+                    metrics = new MathTextMetrics(width, ascent, descent);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[MathFormulaView] measure '{text}' failed: {ex.Message}");
+                metrics = EstimateMathTextMeasurer.Instance.Measure(text, fontSize, italic, bold);
+            }
+
+            _cache[key] = metrics;
+            return metrics;
         }
-        return sb.ToString();
     }
 }

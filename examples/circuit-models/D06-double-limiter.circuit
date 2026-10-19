@@ -1,0 +1,422 @@
+{
+  "Version": "1.2.0",
+  "ProjectName": "双向限幅电路（双管双偏置）",
+  "ProjectFileName": "D06-double-limiter.circuit",
+  "Description": "知识点：双向限幅电路。D1 阳极接输出、阴极接 +2 V 正偏置，当 Vout 超过 2 V + VF = 2.7 V 时导通，形成上限幅；D2 阴极接输出、阳极接 −2 V 负偏置，当 Vout 低于 −2 V − VF = −2.7 V 时导通，形成下限幅。输出被限制在约 ±2.7 V，传输特性为双向折线。教材参考：童诗白《模拟电子技术基础》二极管双向限幅电路。",
+  "CreatedAt": "2026-10-18T13:43:57.7987863+08:00",
+  "ModifiedAt": "2026-10-18T17:59:13.1073581+08:00",
+  "Parameters": {
+    "VCC": 12,
+    "Rb1": 51,
+    "Rb2": 15,
+    "Rc": 3,
+    "Re": 1,
+    "RL": 10,
+    "C1": 10,
+    "C2": 10,
+    "Ce": 47,
+    "Beta": 100,
+    "Freq": 1
+  },
+  "ParameterUnits": {
+    "VCC": "V",
+    "Rb1": "kΩ",
+    "Rb2": "kΩ",
+    "Rc": "kΩ",
+    "Re": "kΩ",
+    "RL": "kΩ",
+    "C1": "μF",
+    "C2": "μF",
+    "Ce": "μF",
+    "Freq": "kHz"
+  },
+  "IsTeachingTemplate": true,
+  "Elements": [
+    {
+      "Id": "V1",
+      "Name": "交流信号源 V1 (峰值 10 V / 50 Hz)",
+      "DefinitionId": "source.v_ac_small_signal",
+      "Category": "激励电源",
+      "Description": "50 Hz 正弦交流电压源，峰值 10 V。",
+      "Value": 0,
+      "FrequencyHz": 1000,
+      "Material": "Silicon",
+      "MosfetK": 0.001,
+      "MosfetLambda": 0,
+      "Type": "AcVoltageSource",
+      "DisplayNumber": 10,
+      "UnitSymbol": "V",
+      "X": 110,
+      "Y": 320,
+      "Width": 60,
+      "Height": 60,
+      "RotationDeg": 0,
+      "Orientation": "Horizontal",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "pos",
+          "Name": "pos",
+          "RelativeX": 0,
+          "RelativeY": -35,
+          "ConnectedNetId": -1
+        },
+        {
+          "Id": "neg",
+          "Name": "neg",
+          "RelativeX": 0,
+          "RelativeY": 35,
+          "ConnectedNetId": -1
+        }
+      ]
+    },
+    {
+      "Id": "R1",
+      "Name": "限幅串联电阻 R1 (1 kΩ)",
+      "DefinitionId": "passive.resistor",
+      "Category": "无源器件",
+      "Description": "串联限流电阻，两只二极管导通时限制电流；与二极管节点串联构成双向限幅支路。",
+      "Value": 0,
+      "FrequencyHz": 1000,
+      "Material": "Silicon",
+      "MosfetK": 0.001,
+      "MosfetLambda": 0,
+      "Type": "Resistor",
+      "DisplayNumber": 1,
+      "UnitSymbol": "kΩ",
+      "X": 240,
+      "Y": 285,
+      "Width": 80,
+      "Height": 50,
+      "RotationDeg": 0,
+      "Orientation": "Horizontal",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "1",
+          "Name": "1",
+          "RelativeX": -40,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        },
+        {
+          "Id": "2",
+          "Name": "2",
+          "RelativeX": 40,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        }
+      ]
+    },
+    {
+      "Id": "D1",
+      "Name": "上限幅二极管 D1 (硅管 VF≈0.7 V)",
+      "DefinitionId": "diode.standard",
+      "Category": "半导体管",
+      "Description": "上限幅二极管：阳极接输出、阴极经 V2 接 +2 V 偏置，门限 +2.7 V。",
+      "Value": 0,
+      "FrequencyHz": 1000,
+      "Material": "Silicon",
+      "MosfetK": 0.001,
+      "MosfetLambda": 0,
+      "Type": "Diode",
+      "DisplayNumber": 0.7,
+      "UnitSymbol": "V",
+      "X": 500,
+      "Y": 320,
+      "Width": 80,
+      "Height": 50,
+      "RotationDeg": 90,
+      "Orientation": "Vertical",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "A",
+          "Name": "A",
+          "RelativeX": -35,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        },
+        {
+          "Id": "K",
+          "Name": "K",
+          "RelativeX": 35,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        }
+      ]
+    },
+    {
+      "Id": "D2",
+      "Name": "下限幅二极管 D2 (硅管 VF≈0.7 V)",
+      "DefinitionId": "diode.standard",
+      "Category": "半导体管",
+      "Description": "下限幅二极管：阴极接输出、阳极经 V3 接 −2 V 偏置，门限 −2.7 V。",
+      "Value": 0,
+      "FrequencyHz": 1000,
+      "Material": "Silicon",
+      "MosfetK": 0.001,
+      "MosfetLambda": 0,
+      "Type": "Diode",
+      "DisplayNumber": 0.7,
+      "UnitSymbol": "V",
+      "X": 600,
+      "Y": 320,
+      "Width": 80,
+      "Height": 50,
+      "RotationDeg": 270,
+      "Orientation": "Vertical",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "A",
+          "Name": "A",
+          "RelativeX": -35,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        },
+        {
+          "Id": "K",
+          "Name": "K",
+          "RelativeX": 35,
+          "RelativeY": 0,
+          "ConnectedNetId": -1
+        }
+      ]
+    },
+    {
+      "Id": "V2",
+      "Name": "正偏置电源 V2 (+2 V)",
+      "DefinitionId": "source.v_dc",
+      "Category": "激励电源",
+      "Description": "直流偏置电源：给 D1 阴极提供 +2 V 上限幅偏置。",
+      "Value": 0,
+      "FrequencyHz": 1000,
+      "Material": "Silicon",
+      "MosfetK": 0.001,
+      "MosfetLambda": 0,
+      "Type": "DcVoltageSource",
+      "DisplayNumber": 2,
+      "UnitSymbol": "V",
+      "X": 500,
+      "Y": 500,
+      "Width": 60,
+      "Height": 60,
+      "RotationDeg": 0,
+      "Orientation": "Horizontal",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "pos",
+          "Name": "pos",
+          "RelativeX": 0,
+          "RelativeY": -35,
+          "ConnectedNetId": -1
+        },
+        {
+          "Id": "neg",
+          "Name": "neg",
+          "RelativeX": 0,
+          "RelativeY": 35,
+          "ConnectedNetId": -1
+        }
+      ]
+    },
+    {
+      "Id": "V3",
+      "Name": "负偏置电源 V3 (−2 V)",
+      "DefinitionId": "source.v_dc",
+      "Category": "激励电源",
+      "Description": "直流偏置电源：给 D2 阳极提供 −2 V 下限幅偏置。",
+      "Value": 0,
+      "FrequencyHz": 1000,
+      "Material": "Silicon",
+      "MosfetK": 0.001,
+      "MosfetLambda": 0,
+      "Type": "DcVoltageSource",
+      "DisplayNumber": -2,
+      "UnitSymbol": "V",
+      "X": 600,
+      "Y": 500,
+      "Width": 60,
+      "Height": 60,
+      "RotationDeg": 0,
+      "Orientation": "Horizontal",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "pos",
+          "Name": "pos",
+          "RelativeX": 0,
+          "RelativeY": -35,
+          "ConnectedNetId": -1
+        },
+        {
+          "Id": "neg",
+          "Name": "neg",
+          "RelativeX": 0,
+          "RelativeY": 35,
+          "ConnectedNetId": -1
+        }
+      ]
+    },
+    {
+      "Id": "GND",
+      "Name": "参考地 GND",
+      "DefinitionId": "reference.ground",
+      "Category": "参考地",
+      "Description": "基准零电位参考节点，统一电路地电位基准。",
+      "Value": 0,
+      "FrequencyHz": 1000,
+      "Material": "Silicon",
+      "MosfetK": 0.001,
+      "MosfetLambda": 0,
+      "Type": "Ground",
+      "DisplayNumber": 0,
+      "UnitSymbol": "V",
+      "X": 300,
+      "Y": 582,
+      "Width": 40,
+      "Height": 35,
+      "RotationDeg": 0,
+      "Orientation": "Horizontal",
+      "MirrorX": false,
+      "Pins": [
+        {
+          "Id": "GND",
+          "Name": "GND",
+          "RelativeX": 0,
+          "RelativeY": -22,
+          "ConnectedNetId": -1
+        }
+      ]
+    }
+  ],
+  "Wires": [
+    {
+      "Id": "W_VIN_V1_pos_R1",
+      "StartElementId": "V1",
+      "StartPinName": "pos",
+      "EndElementId": "R1",
+      "EndPinName": "1",
+      "StartX": 110,
+      "StartY": 285,
+      "EndX": 200,
+      "EndY": 285,
+      "NetId": 1,
+      "FlipCorner": false,
+      "CustomMid": 0,
+      "Waypoints": null
+    },
+    {
+      "Id": "W_cf0258",
+      "StartElementId": "D2",
+      "StartPinName": "A",
+      "EndElementId": "V3",
+      "EndPinName": "pos",
+      "StartX": 600,
+      "StartY": 355,
+      "EndX": 600,
+      "EndY": 465,
+      "NetId": 0,
+      "FlipCorner": true,
+      "CustomMid": 0,
+      "Waypoints": null
+    },
+    {
+      "Id": "W_33b038",
+      "StartElementId": "D1",
+      "StartPinName": "K",
+      "EndElementId": "V2",
+      "EndPinName": "pos",
+      "StartX": 500,
+      "StartY": 355,
+      "EndX": 500,
+      "EndY": 465,
+      "NetId": 0,
+      "FlipCorner": true,
+      "CustomMid": 0,
+      "Waypoints": null
+    },
+    {
+      "Id": "W_52999a",
+      "StartElementId": "V1",
+      "StartPinName": "neg",
+      "EndElementId": "GND",
+      "EndPinName": "GND",
+      "StartX": 110,
+      "StartY": 355,
+      "EndX": 300,
+      "EndY": 560,
+      "NetId": 0,
+      "FlipCorner": true,
+      "CustomMid": 0,
+      "Waypoints": null
+    },
+    {
+      "Id": "W_b1f614",
+      "StartElementId": "V2",
+      "StartPinName": "neg",
+      "EndElementId": "W_52999a",
+      "EndPinName": "WireTap",
+      "StartX": 500,
+      "StartY": 535,
+      "EndX": 300,
+      "EndY": 560,
+      "NetId": 0,
+      "FlipCorner": true,
+      "CustomMid": 0,
+      "Waypoints": null
+    },
+    {
+      "Id": "W_5621ba",
+      "StartElementId": "V3",
+      "StartPinName": "neg",
+      "EndElementId": "W_52999a",
+      "EndPinName": "WireTap",
+      "StartX": 600,
+      "StartY": 535,
+      "EndX": 300,
+      "EndY": 560,
+      "NetId": 0,
+      "FlipCorner": true,
+      "CustomMid": 0,
+      "Waypoints": [
+        [
+          600,
+          560
+        ]
+      ]
+    },
+    {
+      "Id": "W_38607f",
+      "StartElementId": "R1",
+      "StartPinName": "2",
+      "EndElementId": "D1",
+      "EndPinName": "A",
+      "StartX": 280,
+      "StartY": 285,
+      "EndX": 500,
+      "EndY": 285,
+      "NetId": 0,
+      "FlipCorner": false,
+      "CustomMid": 0,
+      "Waypoints": null
+    },
+    {
+      "Id": "W_384851",
+      "StartElementId": "D1",
+      "StartPinName": "A",
+      "EndElementId": "D2",
+      "EndPinName": "K",
+      "StartX": 500,
+      "StartY": 285,
+      "EndX": 600,
+      "EndY": 285,
+      "NetId": 0,
+      "FlipCorner": true,
+      "CustomMid": 0,
+      "Waypoints": null
+    }
+  ]
+}

@@ -168,6 +168,10 @@ def test_capture_page() -> None:
     assert r.status_code == 200
     assert "test-sid" in r.text
     assert "拍摄" in r.text
+    assert r.headers["content-type"].startswith("text/html")
+    escaped = client.get("/capture/test-sid", params={"token": "';alert(1);//"})
+    assert "';alert(1);//" not in escaped.text
+    assert "%27%3Balert%281%29%3B%2F%2F" in escaped.text
 
 
 # ── Worker tests ─────────────────────────────────────────────────

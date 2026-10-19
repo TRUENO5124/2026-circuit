@@ -3,41 +3,56 @@
     x:Class="CircuitAssistant.Controls.MathFormulaView"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:canvas="using:Microsoft.Graphics.Canvas.UI.Xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    mc:Ignorable="d">
+    mc:Ignorable="d"
+    Loaded="MathFormulaView_Loaded"
+    SizeChanged="MathFormulaView_SizeChanged"
+    ActualThemeChanged="MathFormulaView_ActualThemeChanged">
 
-    <Border
-        Background="{ThemeResource LayerFillColorDefaultBrush}"
-        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-        BorderThickness="1"
-        CornerRadius="6"
-        Padding="10,8">
-        <Grid ColumnDefinitions="*,Auto">
-            <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+    <!--
+        Formula body only: the surrounding card / label / padding is provided by
+        the host page. The copy button floats in the top-right corner and never
+        takes a column away from the formula, which wraps at the measured width.
+    -->
+    <Grid x:Name="RootGrid" Padding="4,2">
+        <canvas:CanvasControl
+            x:Name="FormulaCanvas"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Top"
+            ClearColor="Transparent"
+            CreateResources="FormulaCanvas_CreateResources"
+            Draw="FormulaCanvas_Draw" />
+
+        <Button
+            x:Name="CopyButton"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Top"
+            MinWidth="0"
+            Height="22"
+            Padding="5,0"
+            Background="Transparent"
+            BorderThickness="0"
+            Click="CopyLatex_Click"
+            ToolTipService.ToolTip="复制原始 LaTeX 表达式"
+            Visibility="Collapsed">
+            <StackPanel Orientation="Horizontal" Spacing="3">
+                <FontIcon x:Name="CopyIcon" Glyph="&#xE8C8;" FontSize="10" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 <TextBlock
-                    x:Name="FormulaText"
-                    FontFamily="Cambria Math, Latin Modern Math, STIX Two Math, Segoe UI Variable Text, Consolas"
-                    FontSize="13.5"
-                    LineHeight="24"
-                    Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                    IsTextSelectionEnabled="True"
-                    TextWrapping="NoWrap" />
-            </ScrollViewer>
+                    x:Name="CopyText"
+                    Text="LaTeX"
+                    FontSize="9"
+                    VerticalAlignment="Center"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+        </Button>
 
-            <Button
-                Grid.Column="1"
-                VerticalAlignment="Top"
-                Margin="8,0,0,0"
-                Padding="6,3"
-                Click="CopyLatex_Click"
-                ToolTipService.ToolTip="复制原始 LaTeX 表达式"
-                Style="{StaticResource SubtleButtonStyle}">
-                <StackPanel Orientation="Horizontal" Spacing="4">
-                    <FontIcon x:Name="CopyIcon" Glyph="&#xE8C8;" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                    <TextBlock x:Name="CopyText" Text="LaTeX" FontSize="10" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                </StackPanel>
-            </Button>
-        </Grid>
-    </Border>
+        <!-- Resolves the theme accent colour so Win2D can draw with the same brush. -->
+        <TextBlock
+            x:Name="ColorProbe"
+            Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+            Visibility="Collapsed"
+            IsHitTestVisible="False" />
+    </Grid>
 </UserControl>

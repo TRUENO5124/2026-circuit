@@ -30,18 +30,24 @@ public sealed partial class CircuitCanvas : UserControl
     private bool _isPanningCanvas;
     private Vector2 _lastPointerPos;
 
-    // Element dragging state
-    private bool _isDraggingElement;
-    private CircuitElement? _draggedElement;
-    private Vector2 _dragStartPointerPos;
-    private Vector2 _dragStartElementPos;
+    // Windows-style Marquee Box Selection state
+    private bool _isBoxSelecting;
+    private Vector2 _boxSelectStart;
+    private Vector2 _boxSelectCurrent;
 
-    // Wire dragging / corner adjustment state
+    // Multi-element / group dragging state
+    private bool _isDraggingSelection;
+    private Vector2 _dragStartPointerPos;
+    private readonly System.Collections.Generic.Dictionary<CircuitElement, Vector2> _dragStartElementPositions = new();
+    private readonly System.Collections.Generic.Dictionary<CircuitWire, System.Collections.Generic.List<Vector2>> _dragStartWireWaypoints = new();
+    private readonly System.Collections.Generic.Dictionary<CircuitWire, (Vector2 Start, Vector2 End)> _dragStartWireEndpoints = new();
+
+    // Wire dragging state (strictly horizontal or vertical segments)
     private bool _isDraggingWire;
     private CircuitWire? _draggedWire;
-    private int _draggedCornerIndex = -1;
     private int _draggedSegmentIndex = -1;
     private bool _draggedSegmentIsHorizontal;
+    private System.Collections.Generic.List<Vector2> _dragWireBaselinePoints = new();
 
     // Wire connection state
     private bool _isDrawingWire;
@@ -55,10 +61,14 @@ public sealed partial class CircuitCanvas : UserControl
 
     public event Action<float, float>? CursorCoordinatesChanged;
     public event Action<CircuitElement?>? ElementSelected;
+    public event Action<CircuitWire?>? WireSelected;
     public event Action<CircuitElement>? ElementMoved;
     public event Action<string, Vector2>? ElementDroppedFromLibrary;
     public event Action<CircuitWire>? WireCreated;
     public event Action<string>? StatusMessageChanged;
+    public event Action? PushUndoRequested;
+    public event Action? UndoRequested;
+    public event Action? RedoRequested;
 
     // Elements Collection Dependency Property
     public static readonly DependencyProperty ElementsProperty =
@@ -270,6 +280,7 @@ public sealed partial class CircuitCanvas : UserControl
             {
                 canvas.SelectedElement = null;
             }
+            canvas.WireSelected?.Invoke(selected);
             canvas.UpdateSelectionBar(null);
             canvas.Canvas?.Invalidate();
         }
@@ -293,7 +304,7 @@ public sealed partial class CircuitCanvas : UserControl
         if (el != null)
         {
             SelectionActionBar.Visibility = Visibility.Visible;
-            SelectionBarText.Text = $"{el.Id} ({el.FormattedValueDisplay})";
+            SelectionBarText.Text = $"{el.Id} ({GetElementValueText(el)}) · {el.TransformDisplay}";
             if (RotateButton != null) RotateButton.Visibility = Visibility.Visible;
         }
         else
@@ -475,19 +486,46 @@ public sealed partial class CircuitCanvas : UserControl
                 float strokeWidth = wire.IsSelected ? 3.0f : 2.0f;
                 Color wColor = wire.IsSelected ? accentColor : wireColor;
 
+                // If selected, draw soft accent halo around entire wire path
+                if (wire.IsSelected)
+                {
+                    var haloColor = Color.FromArgb(70, accentColor.R, accentColor.G, accentColor.B);
+                    for (int i = 0; i < pts.Count - 1; i++)
+                    {
+                        ds.DrawLine(pts[i], pts[i + 1], haloColor, 8.0f);
+                    }
+                }
+
                 for (int i = 0; i < pts.Count - 1; i++)
                 {
                     ds.DrawLine(pts[i], pts[i + 1], wColor, strokeWidth);
                 }
 
-                // If selected, draw interactive editing handles at the bend corner(s)
-                if (wire.IsSelected)
+                // If selected, draw interactive editing handles at the endpoints and bend corner(s)
+                if (wire.IsSelected && pts.Count > 0)
                 {
-                    for (int i = 1; i < pts.Count - 1; i++)
+                    // Start & End endpoint nodes
+                    ds.FillCircle(pts[0], 4.5f, accentColor);
+                    ds.DrawCircle(pts[0], 4.5f, isDark ? Colors.White : Colors.Black, 1.2f);
+
+                    ds.FillCircle(pts[^1], 4.5f, accentColor);
+                    ds.DrawCircle(pts[^1], 4.5f, isDark ? Colors.White : Colors.Black, 1.2f);
+
+                    // Mid-segment drag grips
+                    for (int i = 0; i < pts.Count - 1; i++)
                     {
-                        var pt = pts[i];
-                        ds.FillCircle(pt, 5.5f, accentColor);
-                        ds.DrawCircle(pt, 5.5f, isDark ? Colors.White : Colors.Black, 1.2f);
+                        var mid = (pts[i] + pts[i + 1]) * 0.5f;
+                        bool isH = MathF.Abs(pts[i].Y - pts[i + 1].Y) < 1f;
+                        if (isH)
+                        {
+                            ds.FillRoundedRectangle(mid.X - 6f, mid.Y - 2.5f, 12f, 5f, 2f, 2f, accentColor);
+                            ds.DrawRoundedRectangle(mid.X - 6f, mid.Y - 2.5f, 12f, 5f, 2f, 2f, isDark ? Colors.White : Colors.Black, 1.0f);
+                        }
+                        else
+                        {
+                            ds.FillRoundedRectangle(mid.X - 2.5f, mid.Y - 6f, 5f, 12f, 2f, 2f, accentColor);
+                            ds.DrawRoundedRectangle(mid.X - 2.5f, mid.Y - 6f, 5f, 12f, 2f, 2f, isDark ? Colors.White : Colors.Black, 1.0f);
+                        }
                     }
                 }
             }
@@ -545,7 +583,7 @@ public sealed partial class CircuitCanvas : UserControl
             foreach (var el in Elements)
             {
                 if (el.Pins.Count == 0) el.InitializeDefaultPins();
-                DrawElement(ds, el, componentColor, labelColor, wireColor, dotColor);
+                DrawElement(ds, el, componentColor, labelColor, dotColor);
 
                 if (el.IsSelected)
                 {
@@ -564,6 +602,21 @@ public sealed partial class CircuitCanvas : UserControl
                 ds.DrawText(_hoveredPin.Value.Pin.Name, hPos.X + 8, hPos.Y - 14, accentColor,
                     new CanvasTextFormat { FontSize = 10, FontWeight = new Windows.UI.Text.FontWeight { Weight = 600 } });
             }
+
+            // 7. Draw Windows-style marquee box selection rectangle
+            if (_isBoxSelecting)
+            {
+                float minX = MathF.Min(_boxSelectStart.X, _boxSelectCurrent.X);
+                float maxX = MathF.Max(_boxSelectStart.X, _boxSelectCurrent.X);
+                float minY = MathF.Min(_boxSelectStart.Y, _boxSelectCurrent.Y);
+                float maxY = MathF.Max(_boxSelectStart.Y, _boxSelectCurrent.Y);
+                var box = new Rect(minX, minY, MathF.Max(maxX - minX, 1f), MathF.Max(maxY - minY, 1f));
+
+                var boxFill = Color.FromArgb(40, accentColor.R, accentColor.G, accentColor.B);
+                var boxStroke = Color.FromArgb(220, accentColor.R, accentColor.G, accentColor.B);
+                ds.FillRectangle(box, boxFill);
+                ds.DrawRectangle(box, boxStroke, 1.2f);
+            }
         }
         catch (Exception ex)
         {
@@ -572,108 +625,27 @@ public sealed partial class CircuitCanvas : UserControl
     }
 
 
-    private void DrawElement(CanvasDrawingSession ds, CircuitElement el, Color componentColor, Color labelColor, Color wireColor, Color dotColor)
+    private void DrawElement(CanvasDrawingSession ds, CircuitElement el, Color componentColor, Color labelColor, Color dotColor)
     {
         var center = new Vector2(el.X, el.Y);
         var originalTransform = ds.Transform;
 
-        // Rotate coordinate system around component center
-        if (el.RotationDeg != 0)
+        // Mirror (about the element centre, before rotation) + rotation. The same
+        // matrix is used by CircuitElement.GetPinWorldPosition(), so pin dots,
+        // wires and solder junctions stay aligned with the drawn symbol.
+        if (el.RotationDeg != 0 || el.MirrorX)
         {
-            var rot = Matrix3x2.CreateRotation((float)(el.RotationDeg * Math.PI / 180.0), center);
-            ds.Transform = rot * originalTransform;
+            ds.Transform = el.GetSymbolTransformMatrix() * originalTransform;
         }
 
-        // Draw canonical component symbol with leads and pin nodes in local space
-        switch (el.Type)
+        // 统一从国际标准几何库（IEC 60617 / IEEE 315）渲染元件符号，
+        // 与符号库卡片（Controls/CircuitSymbolPreview.xaml.cs）同源。
+        DrawSymbolGeometry(ds, el.Type, center, componentColor);
+
+        // 引脚圆点：位置来自 CircuitElement.InitializeDefaultPins() 的局部坐标
+        foreach (var pin in el.Pins)
         {
-            case ElementType.Resistor:
-                DrawResistor(ds, center, componentColor, dotColor);
-                break;
-
-            case ElementType.Capacitor:
-                DrawCapacitor(ds, center, componentColor, dotColor);
-                break;
-
-            case ElementType.Inductor:
-                DrawInductor(ds, center, componentColor, dotColor);
-                break;
-
-            case ElementType.Transformer:
-                DrawTransformer(ds, center, componentColor, dotColor);
-                break;
-
-            case ElementType.BjtNpn:
-                DrawBjtNpn(ds, center, componentColor, dotColor);
-                break;
-
-            case ElementType.BjtPnp:
-                DrawBjtPnp(ds, center, componentColor, dotColor);
-                break;
-
-            case ElementType.MosfetNEnh:
-                DrawMosfetNEnh(ds, center, componentColor, dotColor);
-                break;
-
-            case ElementType.MosfetPEnh:
-                DrawMosfetPEnh(ds, center, componentColor, dotColor);
-                break;
-
-            case ElementType.MosfetNDep:
-                DrawMosfetNDep(ds, center, componentColor, dotColor);
-                break;
-
-            case ElementType.MosfetPDep:
-                DrawMosfetPDep(ds, center, componentColor, dotColor);
-                break;
-
-            case ElementType.JfetN:
-                DrawJfetN(ds, center, componentColor, dotColor);
-                break;
-
-            case ElementType.JfetP:
-                DrawJfetP(ds, center, componentColor, dotColor);
-                break;
-
-            case ElementType.Mosfet:
-            case ElementType.Jfet:
-                DrawMosfetNEnh(ds, center, componentColor, dotColor);
-                break;
-
-            case ElementType.Diode:
-                DrawDiode(ds, center, componentColor, dotColor);
-                break;
-
-            case ElementType.DcVoltageSource:
-                DrawDcSource(ds, center, componentColor, dotColor);
-                break;
-
-            case ElementType.DcCurrentSource:
-                DrawDcCurrentSource(ds, center, componentColor, dotColor);
-                break;
-
-            case ElementType.AcVoltageSource:
-                DrawAcSource(ds, center, componentColor, dotColor);
-                break;
-
-            case ElementType.AcCurrentSource:
-                DrawAcCurrentSource(ds, center, componentColor, dotColor);
-                break;
-
-            case ElementType.Vcvs:
-            case ElementType.Vccs:
-            case ElementType.Ccvs:
-            case ElementType.Cccs:
-                DrawControlledSource(ds, center, isVoltageOut: el.Type is ElementType.Vcvs or ElementType.Ccvs, componentColor, dotColor);
-                break;
-
-            case ElementType.Ground:
-                DrawGroundSymbol(ds, center, componentColor, dotColor);
-                break;
-
-            default:
-                DrawGenericBox(ds, center, el.Width, el.Height, componentColor, dotColor);
-                break;
+            DrawPinNode(ds, center + new Vector2(pin.RelativeX, pin.RelativeY), dotColor);
         }
 
         // Restore original unrotated world transform for text rendering
@@ -683,10 +655,116 @@ public sealed partial class CircuitCanvas : UserControl
         DrawElementLabels(ds, el, center, labelColor, ActualTheme == ElementTheme.Dark);
     }
 
+    private static readonly CanvasStrokeStyle SymbolStrokeStyle = new()
+    {
+        LineJoin = CanvasLineJoin.Round,
+        StartCap = CanvasCapStyle.Round,
+        EndCap = CanvasCapStyle.Round
+    };
+
+    /// <summary>
+    /// 按 Models/SymbolGeometry.cs 的图元绘制元件符号（与符号库卡片同源）。
+    /// 图元坐标为元件局部坐标，绘制时整体平移到元件中心；旋转已由 ds.Transform 处理。
+    /// </summary>
+    private static void DrawSymbolGeometry(CanvasDrawingSession ds, ElementType type, Vector2 center, Color stroke)
+    {
+        var primitives = SymbolGeometryLibrary.Build(type);
+        foreach (var primitive in primitives)
+        {
+            switch (primitive.Kind)
+            {
+                case SymbolPrimitiveKind.Polyline:
+                    DrawSymbolPolyline(ds, primitive, center, stroke);
+                    break;
+
+                case SymbolPrimitiveKind.FilledPolygon:
+                    FillSymbolPolygon(ds, primitive, center, stroke);
+                    break;
+
+                case SymbolPrimitiveKind.Circle:
+                    DrawSymbolCircle(ds, primitive, center, stroke);
+                    break;
+            }
+        }
+    }
+
+    private static void DrawSymbolPolyline(CanvasDrawingSession ds, SymbolPrimitive primitive, Vector2 center, Color stroke)
+    {
+        var points = primitive.Points;
+        if (points.Count < 2) return;
+
+        if (points.Count == 2)
+        {
+            ds.DrawLine(center + points[0], center + points[1], stroke, primitive.Thickness, SymbolStrokeStyle);
+            return;
+        }
+
+        using var pathBuilder = new CanvasPathBuilder(ds);
+        pathBuilder.BeginFigure(center + points[0]);
+        for (int i = 1; i < points.Count; i++)
+        {
+            pathBuilder.AddLine(center + points[i]);
+        }
+        pathBuilder.EndFigure(CanvasFigureLoop.Open);
+        using var geometry = CanvasGeometry.CreatePath(pathBuilder);
+        ds.DrawGeometry(geometry, stroke, primitive.Thickness, SymbolStrokeStyle);
+    }
+
+    private static void FillSymbolPolygon(CanvasDrawingSession ds, SymbolPrimitive primitive, Vector2 center, Color fill)
+    {
+        var points = primitive.Points;
+        if (points.Count < 3) return;
+
+        using var pathBuilder = new CanvasPathBuilder(ds);
+        pathBuilder.BeginFigure(center + points[0]);
+        for (int i = 1; i < points.Count; i++)
+        {
+            pathBuilder.AddLine(center + points[i]);
+        }
+        pathBuilder.EndFigure(CanvasFigureLoop.Closed);
+        using var geometry = CanvasGeometry.CreatePath(pathBuilder);
+        ds.FillGeometry(geometry, fill);
+        // 轻微描边，避免小尺寸/抗锯齿时实心箭头边缘出现缺口
+        ds.DrawGeometry(geometry, fill, 0.6f);
+    }
+
+    private static void DrawSymbolCircle(CanvasDrawingSession ds, SymbolPrimitive primitive, Vector2 center, Color stroke)
+    {
+        if (primitive.Points.Count < 2) return;
+
+        var circleCenter = center + primitive.Points[0];
+        float radius = Vector2.Distance(primitive.Points[0], primitive.Points[1]);
+        if (radius <= 0.05f) return;
+
+        if (primitive.Filled)
+        {
+            ds.FillCircle(circleCenter, radius, stroke);
+        }
+        else
+        {
+            ds.DrawCircle(circleCenter, radius, stroke, primitive.Thickness);
+        }
+    }
+
+    /// <summary>
+    /// 元件数值标签：半导体（BJT / MOSFET / JFET / 二极管）使用
+    /// CircuitElement.FormattedParameterDisplay（β = 100 / Vth = 1.5 V /
+    /// VGS(off) = -2.5 V / VF = 0.7 V），其余元件沿用 FormattedValueDisplay。
+    /// </summary>
+    private static string GetElementValueText(CircuitElement el) => el.Type switch
+    {
+        ElementType.BjtNpn or ElementType.BjtPnp
+            or ElementType.Mosfet or ElementType.MosfetNEnh or ElementType.MosfetPEnh
+            or ElementType.MosfetNDep or ElementType.MosfetPDep
+            or ElementType.Jfet or ElementType.JfetN or ElementType.JfetP
+            or ElementType.Diode => el.FormattedParameterDisplay,
+        _ => el.FormattedValueDisplay
+    };
+
     private void DrawElementLabels(CanvasDrawingSession ds, CircuitElement el, Vector2 center, Color labelColor, bool isDark)
     {
         string id = el.Id;
-        string val = el.FormattedValueDisplay;
+        string val = GetElementValueText(el);
 
         var idFormat = new CanvasTextFormat
         {
@@ -708,6 +786,9 @@ public sealed partial class CircuitCanvas : UserControl
         Color valColor = isDark ? Color.FromArgb(200, 160, 160, 160) : Color.FromArgb(200, 100, 100, 100);
 
         bool isVertical = el.RotationDeg % 180 != 0;
+        // Labels are drawn in screen space (never mirrored); only the side they
+        // sit on follows the symbol mirror so text does not cover the symbol.
+        bool mirrored = el.MirrorX;
 
         switch (el.Type)
         {
@@ -723,14 +804,25 @@ public sealed partial class CircuitCanvas : UserControl
                 }
                 else
                 {
-                    idFormat.HorizontalAlignment = CanvasHorizontalAlignment.Left;
-                    valFormat.HorizontalAlignment = CanvasHorizontalAlignment.Left;
-                    ds.DrawText(id, center.X + 18, center.Y - 14, idColor, idFormat);
-                    ds.DrawText(val, center.X + 18, center.Y + 2, valColor, valFormat);
+                    if (!mirrored)
+                    {
+                        idFormat.HorizontalAlignment = CanvasHorizontalAlignment.Left;
+                        valFormat.HorizontalAlignment = CanvasHorizontalAlignment.Left;
+                        ds.DrawText(id, center.X + 18, center.Y - 14, idColor, idFormat);
+                        ds.DrawText(val, center.X + 18, center.Y + 2, valColor, valFormat);
+                    }
+                    else
+                    {
+                        idFormat.HorizontalAlignment = CanvasHorizontalAlignment.Right;
+                        valFormat.HorizontalAlignment = CanvasHorizontalAlignment.Right;
+                        ds.DrawText(id, center.X - 18, center.Y - 14, idColor, idFormat);
+                        ds.DrawText(val, center.X - 18, center.Y + 2, valColor, valFormat);
+                    }
                 }
                 break;
 
             case ElementType.Capacitor:
+            case ElementType.CapacitorPolarized:
                 if (!isVertical)
                 {
                     idFormat.HorizontalAlignment = CanvasHorizontalAlignment.Center;
@@ -740,10 +832,20 @@ public sealed partial class CircuitCanvas : UserControl
                 }
                 else
                 {
-                    idFormat.HorizontalAlignment = CanvasHorizontalAlignment.Left;
-                    valFormat.HorizontalAlignment = CanvasHorizontalAlignment.Left;
-                    ds.DrawText(id, center.X + 24, center.Y - 14, idColor, idFormat);
-                    ds.DrawText(val, center.X + 24, center.Y + 2, valColor, valFormat);
+                    if (!mirrored)
+                    {
+                        idFormat.HorizontalAlignment = CanvasHorizontalAlignment.Left;
+                        valFormat.HorizontalAlignment = CanvasHorizontalAlignment.Left;
+                        ds.DrawText(id, center.X + 24, center.Y - 14, idColor, idFormat);
+                        ds.DrawText(val, center.X + 24, center.Y + 2, valColor, valFormat);
+                    }
+                    else
+                    {
+                        idFormat.HorizontalAlignment = CanvasHorizontalAlignment.Right;
+                        valFormat.HorizontalAlignment = CanvasHorizontalAlignment.Right;
+                        ds.DrawText(id, center.X - 24, center.Y - 14, idColor, idFormat);
+                        ds.DrawText(val, center.X - 24, center.Y + 2, valColor, valFormat);
+                    }
                 }
                 break;
 
@@ -757,10 +859,20 @@ public sealed partial class CircuitCanvas : UserControl
             case ElementType.Cccs:
                 if (!isVertical)
                 {
-                    idFormat.HorizontalAlignment = CanvasHorizontalAlignment.Left;
-                    valFormat.HorizontalAlignment = CanvasHorizontalAlignment.Left;
-                    ds.DrawText(id, center.X + 26, center.Y - 14, idColor, idFormat);
-                    ds.DrawText(val, center.X + 26, center.Y + 2, valColor, valFormat);
+                    if (!mirrored)
+                    {
+                        idFormat.HorizontalAlignment = CanvasHorizontalAlignment.Left;
+                        valFormat.HorizontalAlignment = CanvasHorizontalAlignment.Left;
+                        ds.DrawText(id, center.X + 26, center.Y - 14, idColor, idFormat);
+                        ds.DrawText(val, center.X + 26, center.Y + 2, valColor, valFormat);
+                    }
+                    else
+                    {
+                        idFormat.HorizontalAlignment = CanvasHorizontalAlignment.Right;
+                        valFormat.HorizontalAlignment = CanvasHorizontalAlignment.Right;
+                        ds.DrawText(id, center.X - 26, center.Y - 14, idColor, idFormat);
+                        ds.DrawText(val, center.X - 26, center.Y + 2, valColor, valFormat);
+                    }
                 }
                 else
                 {
@@ -772,12 +884,38 @@ public sealed partial class CircuitCanvas : UserControl
                 break;
 
             case ElementType.Ground:
-                idFormat.HorizontalAlignment = CanvasHorizontalAlignment.Left;
-                valFormat.HorizontalAlignment = CanvasHorizontalAlignment.Left;
-                ds.DrawText(id, center.X + 22, center.Y - 8, idColor, idFormat);
-                if (!string.IsNullOrWhiteSpace(val) && val != "0 V")
+                if (!mirrored)
                 {
-                    ds.DrawText(val, center.X + 22, center.Y + 6, valColor, valFormat);
+                    idFormat.HorizontalAlignment = CanvasHorizontalAlignment.Left;
+                    valFormat.HorizontalAlignment = CanvasHorizontalAlignment.Left;
+                    ds.DrawText(id, center.X + 22, center.Y - 8, idColor, idFormat);
+                    if (!string.IsNullOrWhiteSpace(val) && val != "0 V")
+                    {
+                        ds.DrawText(val, center.X + 22, center.Y + 6, valColor, valFormat);
+                    }
+                }
+                else
+                {
+                    idFormat.HorizontalAlignment = CanvasHorizontalAlignment.Right;
+                    valFormat.HorizontalAlignment = CanvasHorizontalAlignment.Right;
+                    ds.DrawText(id, center.X - 22, center.Y - 8, idColor, idFormat);
+                    if (!string.IsNullOrWhiteSpace(val) && val != "0 V")
+                    {
+                        ds.DrawText(val, center.X - 22, center.Y + 6, valColor, valFormat);
+                    }
+                }
+                break;
+
+            case ElementType.VccPort:
+                // Multisim 风格电源端口：id 居中绘制在电源横杠上方，数值标注在引线右侧
+                idFormat.HorizontalAlignment = CanvasHorizontalAlignment.Center;
+                ds.DrawText(id, center.X, center.Y - 24, idColor, idFormat);
+                if (!string.IsNullOrWhiteSpace(val))
+                {
+                    valFormat.HorizontalAlignment = mirrored
+                        ? CanvasHorizontalAlignment.Right
+                        : CanvasHorizontalAlignment.Left;
+                    ds.DrawText(val, center.X + (mirrored ? -8 : 8), center.Y + 6, valColor, valFormat);
                 }
                 break;
 
@@ -791,10 +929,20 @@ public sealed partial class CircuitCanvas : UserControl
             case ElementType.JfetP:
             case ElementType.Mosfet:
             case ElementType.Jfet:
-                idFormat.HorizontalAlignment = CanvasHorizontalAlignment.Right;
-                valFormat.HorizontalAlignment = CanvasHorizontalAlignment.Right;
-                ds.DrawText(id, center.X - 18, center.Y - 36, idColor, idFormat);
-                ds.DrawText(val, center.X - 18, center.Y + 24, valColor, valFormat);
+                if (!mirrored)
+                {
+                    idFormat.HorizontalAlignment = CanvasHorizontalAlignment.Right;
+                    valFormat.HorizontalAlignment = CanvasHorizontalAlignment.Right;
+                    ds.DrawText(id, center.X - 18, center.Y - 36, idColor, idFormat);
+                    ds.DrawText(val, center.X - 18, center.Y + 24, valColor, valFormat);
+                }
+                else
+                {
+                    idFormat.HorizontalAlignment = CanvasHorizontalAlignment.Left;
+                    valFormat.HorizontalAlignment = CanvasHorizontalAlignment.Left;
+                    ds.DrawText(id, center.X + 18, center.Y - 36, idColor, idFormat);
+                    ds.DrawText(val, center.X + 18, center.Y + 24, valColor, valFormat);
+                }
                 break;
 
             default:
@@ -852,395 +1000,26 @@ public sealed partial class CircuitCanvas : UserControl
         }
     }
 
-    // Canonical Component Symbol Drawers (0° Standard Orientation)
-    private void DrawResistor(CanvasDrawingSession ds, Vector2 center, Color stroke, Color dotColor)
-    {
-        // Leads
-        ds.DrawLine(center.X - 40, center.Y, center.X - 20, center.Y, stroke, 2f);
-        ds.DrawLine(center.X + 20, center.Y, center.X + 40, center.Y, stroke, 2f);
-        // Resistor body rectangle
-        ds.DrawRectangle(center.X - 20, center.Y - 10, 40, 20, stroke, 2f);
-        // Connection pin nodes
-        DrawPinNode(ds, new Vector2(center.X - 40, center.Y), dotColor);
-        DrawPinNode(ds, new Vector2(center.X + 40, center.Y), dotColor);
-    }
-
-    private void DrawCapacitor(CanvasDrawingSession ds, Vector2 center, Color stroke, Color dotColor)
-    {
-        // Leads
-        ds.DrawLine(center.X - 35, center.Y, center.X - 6, center.Y, stroke, 2f);
-        ds.DrawLine(center.X + 6, center.Y, center.X + 35, center.Y, stroke, 2f);
-        // Plates
-        ds.DrawLine(center.X - 6, center.Y - 18, center.X - 6, center.Y + 18, stroke, 2.5f);
-        ds.DrawLine(center.X + 6, center.Y - 18, center.X + 6, center.Y + 18, stroke, 2.5f);
-        // Pins
-        DrawPinNode(ds, new Vector2(center.X - 35, center.Y), dotColor);
-        DrawPinNode(ds, new Vector2(center.X + 35, center.Y), dotColor);
-    }
-
-    private void DrawInductor(CanvasDrawingSession ds, Vector2 center, Color stroke, Color dotColor)
-    {
-        // Leads
-        ds.DrawLine(center.X - 35, center.Y, center.X - 22, center.Y, stroke, 2f);
-        ds.DrawLine(center.X + 22, center.Y, center.X + 35, center.Y, stroke, 2f);
-        // 3 loops
-        ds.DrawCircle(center.X - 14, center.Y - 5, 8, stroke, 2f);
-        ds.DrawCircle(center.X, center.Y - 5, 8, stroke, 2f);
-        ds.DrawCircle(center.X + 14, center.Y - 5, 8, stroke, 2f);
-        // Pins
-        DrawPinNode(ds, new Vector2(center.X - 35, center.Y), dotColor);
-        DrawPinNode(ds, new Vector2(center.X + 35, center.Y), dotColor);
-    }
-
-    private void DrawBjtNpn(CanvasDrawingSession ds, Vector2 center, Color stroke, Color dotColor)
-    {
-        ds.DrawCircle(center, 30, stroke, 1.5f);
-        // Base bar
-        ds.DrawLine(center.X - 12, center.Y - 18, center.X - 12, center.Y + 18, stroke, 3.5f);
-        // Base lead
-        ds.DrawLine(center.X - 35, center.Y, center.X - 12, center.Y, stroke, 2f);
-        // Collector lead
-        ds.DrawLine(center.X - 12, center.Y - 9, center.X + 20, center.Y - 24, stroke, 2f);
-        ds.DrawLine(center.X + 20, center.Y - 24, center.X + 20, center.Y - 35, stroke, 2f);
-        // Emitter lead with arrow
-        ds.DrawLine(center.X - 12, center.Y + 9, center.X + 20, center.Y + 24, stroke, 2f);
-        ds.DrawLine(center.X + 20, center.Y + 24, center.X + 20, center.Y + 35, stroke, 2f);
-        ds.FillCircle(new Vector2(center.X + 11, center.Y + 20), 3.5f, stroke);
-
-        // Terminal pins
-        DrawPinNode(ds, new Vector2(center.X - 35, center.Y), dotColor); // Base
-        DrawPinNode(ds, new Vector2(center.X + 20, center.Y - 35), dotColor); // Collector
-        DrawPinNode(ds, new Vector2(center.X + 20, center.Y + 35), dotColor); // Emitter
-    }
-
-    private void DrawBjtPnp(CanvasDrawingSession ds, Vector2 center, Color stroke, Color dotColor)
-    {
-        ds.DrawCircle(center, 30, stroke, 1.5f);
-        ds.DrawLine(center.X - 12, center.Y - 18, center.X - 12, center.Y + 18, stroke, 3.5f);
-        ds.DrawLine(center.X - 35, center.Y, center.X - 12, center.Y, stroke, 2f);
-        ds.DrawLine(center.X - 12, center.Y - 9, center.X + 20, center.Y - 24, stroke, 2f);
-        ds.DrawLine(center.X + 20, center.Y - 24, center.X + 20, center.Y - 35, stroke, 2f);
-        ds.DrawLine(center.X - 12, center.Y + 9, center.X + 20, center.Y + 24, stroke, 2f);
-        ds.DrawLine(center.X + 20, center.Y + 24, center.X + 20, center.Y + 35, stroke, 2f);
-        ds.FillCircle(new Vector2(center.X - 2, center.Y + 14), 3.5f, stroke);
-
-        DrawPinNode(ds, new Vector2(center.X - 35, center.Y), dotColor);
-        DrawPinNode(ds, new Vector2(center.X + 20, center.Y - 35), dotColor);
-        DrawPinNode(ds, new Vector2(center.X + 20, center.Y + 35), dotColor);
-    }
-
-    private void DrawMosfetNEnh(CanvasDrawingSession ds, Vector2 center, Color stroke, Color dotColor)
-    {
-        ds.DrawCircle(center, 30, stroke, 1.5f);
-        // Gate lead & plate
-        ds.DrawLine(center.X - 35, center.Y, center.X - 12, center.Y, stroke, 2f);
-        ds.DrawLine(center.X - 12, center.Y - 18, center.X - 12, center.Y + 18, stroke, 3f);
-
-        // Segmented channel (3 broken segments)
-        ds.DrawLine(center.X - 4, center.Y - 18, center.X - 4, center.Y - 8, stroke, 3.2f);
-        ds.DrawLine(center.X - 4, center.Y - 5, center.X - 4, center.Y + 5, stroke, 3.2f);
-        ds.DrawLine(center.X - 4, center.Y + 8, center.X - 4, center.Y + 18, stroke, 3.2f);
-
-        // Drain lead
-        ds.DrawLine(center.X - 4, center.Y - 13, center.X + 20, center.Y - 13, stroke, 2f);
-        ds.DrawLine(center.X + 20, center.Y - 13, center.X + 20, center.Y - 35, stroke, 2f);
-
-        // Source lead
-        ds.DrawLine(center.X - 4, center.Y + 13, center.X + 20, center.Y + 13, stroke, 2f);
-        ds.DrawLine(center.X + 20, center.Y + 13, center.X + 20, center.Y + 35, stroke, 2f);
-
-        // Substrate connection
-        ds.DrawLine(center.X - 4, center.Y, center.X + 10, center.Y, stroke, 2f);
-        ds.DrawLine(center.X + 10, center.Y, center.X + 10, center.Y + 13, stroke, 2f);
-
-        // N-channel substrate arrow pointing IN towards channel (leftwards)
-        ds.DrawLine(center.X + 6, center.Y - 5, center.X - 2, center.Y, stroke, 2.2f);
-        ds.DrawLine(center.X + 6, center.Y + 5, center.X - 2, center.Y, stroke, 2.2f);
-
-        DrawPinNode(ds, new Vector2(center.X - 35, center.Y), dotColor); // Gate
-        DrawPinNode(ds, new Vector2(center.X + 20, center.Y - 35), dotColor); // Drain
-        DrawPinNode(ds, new Vector2(center.X + 20, center.Y + 35), dotColor); // Source
-    }
-
-    private void DrawMosfetPEnh(CanvasDrawingSession ds, Vector2 center, Color stroke, Color dotColor)
-    {
-        ds.DrawCircle(center, 30, stroke, 1.5f);
-        // Gate lead & plate
-        ds.DrawLine(center.X - 35, center.Y, center.X - 12, center.Y, stroke, 2f);
-        ds.DrawLine(center.X - 12, center.Y - 18, center.X - 12, center.Y + 18, stroke, 3f);
-
-        // Segmented channel (3 broken segments)
-        ds.DrawLine(center.X - 4, center.Y - 18, center.X - 4, center.Y - 8, stroke, 3.2f);
-        ds.DrawLine(center.X - 4, center.Y - 5, center.X - 4, center.Y + 5, stroke, 3.2f);
-        ds.DrawLine(center.X - 4, center.Y + 8, center.X - 4, center.Y + 18, stroke, 3.2f);
-
-        // Drain lead
-        ds.DrawLine(center.X - 4, center.Y - 13, center.X + 20, center.Y - 13, stroke, 2f);
-        ds.DrawLine(center.X + 20, center.Y - 13, center.X + 20, center.Y - 35, stroke, 2f);
-
-        // Source lead
-        ds.DrawLine(center.X - 4, center.Y + 13, center.X + 20, center.Y + 13, stroke, 2f);
-        ds.DrawLine(center.X + 20, center.Y + 13, center.X + 20, center.Y + 35, stroke, 2f);
-
-        // Substrate connection
-        ds.DrawLine(center.X - 4, center.Y, center.X + 10, center.Y, stroke, 2f);
-        ds.DrawLine(center.X + 10, center.Y, center.X + 10, center.Y + 13, stroke, 2f);
-
-        // P-channel substrate arrow pointing OUT away from channel (rightwards)
-        ds.DrawLine(center.X - 2, center.Y - 5, center.X + 6, center.Y, stroke, 2.2f);
-        ds.DrawLine(center.X - 2, center.Y + 5, center.X + 6, center.Y, stroke, 2.2f);
-
-        DrawPinNode(ds, new Vector2(center.X - 35, center.Y), dotColor); // Gate
-        DrawPinNode(ds, new Vector2(center.X + 20, center.Y - 35), dotColor); // Drain
-        DrawPinNode(ds, new Vector2(center.X + 20, center.Y + 35), dotColor); // Source
-    }
-
-    private void DrawMosfetNDep(CanvasDrawingSession ds, Vector2 center, Color stroke, Color dotColor)
-    {
-        ds.DrawCircle(center, 30, stroke, 1.5f);
-        // Gate lead & plate
-        ds.DrawLine(center.X - 35, center.Y, center.X - 12, center.Y, stroke, 2f);
-        ds.DrawLine(center.X - 12, center.Y - 18, center.X - 12, center.Y + 18, stroke, 3f);
-
-        // Solid continuous channel
-        ds.DrawLine(center.X - 4, center.Y - 18, center.X - 4, center.Y + 18, stroke, 3.8f);
-
-        // Drain lead
-        ds.DrawLine(center.X - 4, center.Y - 13, center.X + 20, center.Y - 13, stroke, 2f);
-        ds.DrawLine(center.X + 20, center.Y - 13, center.X + 20, center.Y - 35, stroke, 2f);
-
-        // Source lead
-        ds.DrawLine(center.X - 4, center.Y + 13, center.X + 20, center.Y + 13, stroke, 2f);
-        ds.DrawLine(center.X + 20, center.Y + 13, center.X + 20, center.Y + 35, stroke, 2f);
-
-        // Substrate connection
-        ds.DrawLine(center.X - 4, center.Y, center.X + 10, center.Y, stroke, 2f);
-        ds.DrawLine(center.X + 10, center.Y, center.X + 10, center.Y + 13, stroke, 2f);
-
-        // N-channel substrate arrow pointing IN towards channel (leftwards)
-        ds.DrawLine(center.X + 6, center.Y - 5, center.X - 2, center.Y, stroke, 2.2f);
-        ds.DrawLine(center.X + 6, center.Y + 5, center.X - 2, center.Y, stroke, 2.2f);
-
-        DrawPinNode(ds, new Vector2(center.X - 35, center.Y), dotColor); // Gate
-        DrawPinNode(ds, new Vector2(center.X + 20, center.Y - 35), dotColor); // Drain
-        DrawPinNode(ds, new Vector2(center.X + 20, center.Y + 35), dotColor); // Source
-    }
-
-    private void DrawMosfetPDep(CanvasDrawingSession ds, Vector2 center, Color stroke, Color dotColor)
-    {
-        ds.DrawCircle(center, 30, stroke, 1.5f);
-        // Gate lead & plate
-        ds.DrawLine(center.X - 35, center.Y, center.X - 12, center.Y, stroke, 2f);
-        ds.DrawLine(center.X - 12, center.Y - 18, center.X - 12, center.Y + 18, stroke, 3f);
-
-        // Solid continuous channel
-        ds.DrawLine(center.X - 4, center.Y - 18, center.X - 4, center.Y + 18, stroke, 3.8f);
-
-        // Drain lead
-        ds.DrawLine(center.X - 4, center.Y - 13, center.X + 20, center.Y - 13, stroke, 2f);
-        ds.DrawLine(center.X + 20, center.Y - 13, center.X + 20, center.Y - 35, stroke, 2f);
-
-        // Source lead
-        ds.DrawLine(center.X - 4, center.Y + 13, center.X + 20, center.Y + 13, stroke, 2f);
-        ds.DrawLine(center.X + 20, center.Y + 13, center.X + 20, center.Y + 35, stroke, 2f);
-
-        // Substrate connection
-        ds.DrawLine(center.X - 4, center.Y, center.X + 10, center.Y, stroke, 2f);
-        ds.DrawLine(center.X + 10, center.Y, center.X + 10, center.Y + 13, stroke, 2f);
-
-        // P-channel substrate arrow pointing OUT away from channel (rightwards)
-        ds.DrawLine(center.X - 2, center.Y - 5, center.X + 6, center.Y, stroke, 2.2f);
-        ds.DrawLine(center.X - 2, center.Y + 5, center.X + 6, center.Y, stroke, 2.2f);
-
-        DrawPinNode(ds, new Vector2(center.X - 35, center.Y), dotColor); // Gate
-        DrawPinNode(ds, new Vector2(center.X + 20, center.Y - 35), dotColor); // Drain
-        DrawPinNode(ds, new Vector2(center.X + 20, center.Y + 35), dotColor); // Source
-    }
-
-    private void DrawJfetN(CanvasDrawingSession ds, Vector2 center, Color stroke, Color dotColor)
-    {
-        ds.DrawCircle(center, 30, stroke, 1.5f);
-        // Vertical Channel
-        ds.DrawLine(center.X + 8, center.Y - 18, center.X + 8, center.Y + 18, stroke, 3.5f);
-
-        // Drain lead
-        ds.DrawLine(center.X + 8, center.Y - 18, center.X + 20, center.Y - 18, stroke, 2f);
-        ds.DrawLine(center.X + 20, center.Y - 18, center.X + 20, center.Y - 35, stroke, 2f);
-
-        // Source lead
-        ds.DrawLine(center.X + 8, center.Y + 18, center.X + 20, center.Y + 18, stroke, 2f);
-        ds.DrawLine(center.X + 20, center.Y + 18, center.X + 20, center.Y + 35, stroke, 2f);
-
-        // Gate lead
-        ds.DrawLine(center.X - 35, center.Y, center.X + 8, center.Y, stroke, 2f);
-
-        // N-channel arrow on Gate lead pointing IN (rightwards toward channel)
-        ds.DrawLine(center.X - 1, center.Y - 5, center.X + 7, center.Y, stroke, 2.2f);
-        ds.DrawLine(center.X - 1, center.Y + 5, center.X + 7, center.Y, stroke, 2.2f);
-
-        DrawPinNode(ds, new Vector2(center.X - 35, center.Y), dotColor); // Gate
-        DrawPinNode(ds, new Vector2(center.X + 20, center.Y - 35), dotColor); // Drain
-        DrawPinNode(ds, new Vector2(center.X + 20, center.Y + 35), dotColor); // Source
-    }
-
-    private void DrawJfetP(CanvasDrawingSession ds, Vector2 center, Color stroke, Color dotColor)
-    {
-        ds.DrawCircle(center, 30, stroke, 1.5f);
-        // Vertical Channel
-        ds.DrawLine(center.X + 8, center.Y - 18, center.X + 8, center.Y + 18, stroke, 3.5f);
-
-        // Drain lead
-        ds.DrawLine(center.X + 8, center.Y - 18, center.X + 20, center.Y - 18, stroke, 2f);
-        ds.DrawLine(center.X + 20, center.Y - 18, center.X + 20, center.Y - 35, stroke, 2f);
-
-        // Source lead
-        ds.DrawLine(center.X + 8, center.Y + 18, center.X + 20, center.Y + 18, stroke, 2f);
-        ds.DrawLine(center.X + 20, center.Y + 18, center.X + 20, center.Y + 35, stroke, 2f);
-
-        // Gate lead
-        ds.DrawLine(center.X - 35, center.Y, center.X + 8, center.Y, stroke, 2f);
-
-        // P-channel arrow on Gate lead pointing OUT (leftwards away from channel)
-        ds.DrawLine(center.X + 3, center.Y - 5, center.X - 5, center.Y, stroke, 2.2f);
-        ds.DrawLine(center.X + 3, center.Y + 5, center.X - 5, center.Y, stroke, 2.2f);
-
-        DrawPinNode(ds, new Vector2(center.X - 35, center.Y), dotColor); // Gate
-        DrawPinNode(ds, new Vector2(center.X + 20, center.Y - 35), dotColor); // Drain
-        DrawPinNode(ds, new Vector2(center.X + 20, center.Y + 35), dotColor); // Source
-    }
-
-    private void DrawDcSource(CanvasDrawingSession ds, Vector2 center, Color stroke, Color dotColor)
-    {
-        ds.DrawCircle(center, 18, stroke, 2f);
-        ds.DrawLine(center.X, center.Y - 35, center.X, center.Y - 18, stroke, 2f);
-        ds.DrawLine(center.X, center.Y + 18, center.X, center.Y + 35, stroke, 2f);
-        // + and - signs
-        ds.DrawLine(center.X - 5, center.Y - 8, center.X + 5, center.Y - 8, stroke, 1.5f);
-        ds.DrawLine(center.X, center.Y - 13, center.X, center.Y - 3, stroke, 1.5f);
-        ds.DrawLine(center.X - 5, center.Y + 8, center.X + 5, center.Y + 8, stroke, 1.5f);
-
-        DrawPinNode(ds, new Vector2(center.X, center.Y - 35), dotColor);
-        DrawPinNode(ds, new Vector2(center.X, center.Y + 35), dotColor);
-    }
-
-    private void DrawDcCurrentSource(CanvasDrawingSession ds, Vector2 center, Color stroke, Color dotColor)
-    {
-        ds.DrawCircle(center, 18, stroke, 2f);
-        ds.DrawLine(center.X, center.Y - 35, center.X, center.Y - 18, stroke, 2f);
-        ds.DrawLine(center.X, center.Y + 18, center.X, center.Y + 35, stroke, 2f);
-        // Arrow
-        ds.DrawLine(center.X, center.Y + 8, center.X, center.Y - 8, stroke, 2f);
-        ds.DrawLine(center.X - 4, center.Y - 3, center.X, center.Y - 8, stroke, 2f);
-        ds.DrawLine(center.X + 4, center.Y - 3, center.X, center.Y - 8, stroke, 2f);
-
-        DrawPinNode(ds, new Vector2(center.X, center.Y - 35), dotColor);
-        DrawPinNode(ds, new Vector2(center.X, center.Y + 35), dotColor);
-    }
-
-    private void DrawAcSource(CanvasDrawingSession ds, Vector2 center, Color stroke, Color dotColor)
-    {
-        ds.DrawCircle(center, 18, stroke, 2f);
-        ds.DrawLine(center.X, center.Y - 35, center.X, center.Y - 18, stroke, 2f);
-        ds.DrawLine(center.X, center.Y + 18, center.X, center.Y + 35, stroke, 2f);
-        // Sine curve
-        ds.DrawLine(center.X - 10, center.Y, center.X, center.Y - 6, stroke, 1.5f);
-        ds.DrawLine(center.X, center.Y - 6, center.X + 10, center.Y + 6, stroke, 1.5f);
-
-        DrawPinNode(ds, new Vector2(center.X, center.Y - 35), dotColor);
-        DrawPinNode(ds, new Vector2(center.X, center.Y + 35), dotColor);
-    }
-
-    private void DrawAcCurrentSource(CanvasDrawingSession ds, Vector2 center, Color stroke, Color dotColor)
-    {
-        ds.DrawCircle(center, 18, stroke, 2f);
-        ds.DrawLine(center.X, center.Y - 35, center.X, center.Y - 18, stroke, 2f);
-        ds.DrawLine(center.X, center.Y + 18, center.X, center.Y + 35, stroke, 2f);
-        ds.DrawLine(center.X, center.Y + 8, center.X, center.Y - 8, stroke, 2f);
-
-        DrawPinNode(ds, new Vector2(center.X, center.Y - 35), dotColor);
-        DrawPinNode(ds, new Vector2(center.X, center.Y + 35), dotColor);
-    }
-
-    private void DrawGroundSymbol(CanvasDrawingSession ds, Vector2 pos, Color stroke, Color dotColor)
-    {
-        // Top lead and pin node
-        ds.DrawLine(pos.X, pos.Y - 22, pos.X, pos.Y, stroke, 2f);
-        DrawPinNode(ds, new Vector2(pos.X, pos.Y - 22), dotColor);
-
-        // Ground bars
-        ds.DrawLine(pos.X - 16, pos.Y, pos.X + 16, pos.Y, stroke, 2.5f);
-        ds.DrawLine(pos.X - 10, pos.Y + 5, pos.X + 10, pos.Y + 5, stroke, 2f);
-        ds.DrawLine(pos.X - 4, pos.Y + 10, pos.X + 4, pos.Y + 10, stroke, 1.5f);
-    }
-
-    private void DrawDiode(CanvasDrawingSession ds, Vector2 center, Color stroke, Color dotColor)
-    {
-        ds.DrawLine(center.X - 35, center.Y, center.X - 10, center.Y, stroke, 2f);
-        ds.DrawLine(center.X + 10, center.Y, center.X + 35, center.Y, stroke, 2f);
-        // Triangle
-        ds.DrawLine(center.X - 10, center.Y - 12, center.X + 10, center.Y, stroke, 2f);
-        ds.DrawLine(center.X - 10, center.Y + 12, center.X + 10, center.Y, stroke, 2f);
-        ds.DrawLine(center.X - 10, center.Y - 12, center.X - 10, center.Y + 12, stroke, 2f);
-        // Cathode bar
-        ds.DrawLine(center.X + 10, center.Y - 12, center.X + 10, center.Y + 12, stroke, 2.5f);
-
-        DrawPinNode(ds, new Vector2(center.X - 35, center.Y), dotColor);
-        DrawPinNode(ds, new Vector2(center.X + 35, center.Y), dotColor);
-    }
-
-    private void DrawControlledSource(CanvasDrawingSession ds, Vector2 center, bool isVoltageOut, Color stroke, Color dotColor)
-    {
-        float r = 20f;
-        // Diamond shape
-        ds.DrawLine(center.X, center.Y - r, center.X + r, center.Y, stroke, 2f);
-        ds.DrawLine(center.X + r, center.Y, center.X, center.Y + r, stroke, 2f);
-        ds.DrawLine(center.X, center.Y + r, center.X - r, center.Y, stroke, 2f);
-        ds.DrawLine(center.X - r, center.Y, center.X, center.Y - r, stroke, 2f);
-
-        // Leads
-        ds.DrawLine(center.X - 35, center.Y - 15, center.X - r, center.Y - 15, stroke, 1.5f);
-        ds.DrawLine(center.X - 35, center.Y + 15, center.X - r, center.Y + 15, stroke, 1.5f);
-        ds.DrawLine(center.X + r, center.Y - 15, center.X + 35, center.Y - 15, stroke, 1.5f);
-        ds.DrawLine(center.X + r, center.Y + 15, center.X + 35, center.Y + 15, stroke, 1.5f);
-
-        DrawPinNode(ds, new Vector2(center.X - 35, center.Y - 15), dotColor);
-        DrawPinNode(ds, new Vector2(center.X - 35, center.Y + 15), dotColor);
-        DrawPinNode(ds, new Vector2(center.X + 35, center.Y - 15), dotColor);
-        DrawPinNode(ds, new Vector2(center.X + 35, center.Y + 15), dotColor);
-    }
-
-    private void DrawTransformer(CanvasDrawingSession ds, Vector2 center, Color stroke, Color dotColor)
-    {
-        ds.DrawLine(center.X - 35, center.Y - 15, center.X - 15, center.Y - 15, stroke, 2f);
-        ds.DrawLine(center.X - 35, center.Y + 15, center.X - 15, center.Y + 15, stroke, 2f);
-        ds.DrawLine(center.X + 15, center.Y - 15, center.X + 35, center.Y - 15, stroke, 2f);
-        ds.DrawLine(center.X + 15, center.Y + 15, center.X + 35, center.Y + 15, stroke, 2f);
-
-        ds.DrawCircle(center.X - 15, center.Y - 8, 7, stroke, 2f);
-        ds.DrawCircle(center.X - 15, center.Y + 8, 7, stroke, 2f);
-        ds.DrawLine(center.X - 3, center.Y - 20, center.X - 3, center.Y + 20, stroke, 2f);
-        ds.DrawLine(center.X + 3, center.Y - 20, center.X + 3, center.Y + 20, stroke, 2f);
-        ds.DrawCircle(center.X + 15, center.Y - 8, 7, stroke, 2f);
-        ds.DrawCircle(center.X + 15, center.Y + 8, 7, stroke, 2f);
-
-        DrawPinNode(ds, new Vector2(center.X - 35, center.Y - 15), dotColor);
-        DrawPinNode(ds, new Vector2(center.X - 35, center.Y + 15), dotColor);
-        DrawPinNode(ds, new Vector2(center.X + 35, center.Y - 15), dotColor);
-        DrawPinNode(ds, new Vector2(center.X + 35, center.Y + 15), dotColor);
-    }
-
-    private void DrawGenericBox(CanvasDrawingSession ds, Vector2 center, float w, float h, Color stroke, Color dotColor)
-    {
-        ds.DrawRoundedRectangle(center.X - w / 2, center.Y - h / 2, w, h, 4, 4, stroke, 2f);
-        ds.DrawLine(center.X - w / 2 - 15, center.Y, center.X - w / 2, center.Y, stroke, 2f);
-        ds.DrawLine(center.X + w / 2, center.Y, center.X + w / 2 + 15, center.Y, stroke, 2f);
-        DrawPinNode(ds, new Vector2(center.X - w / 2 - 15, center.Y), dotColor);
-        DrawPinNode(ds, new Vector2(center.X + w / 2 + 15, center.Y), dotColor);
-    }
-
     // =========================================================================
     // Pointer and Interactive Event Handlers
     // =========================================================================
+    private bool IsOutsidePinKeepOut(Vector2 pt, float threshold = 5.0f)
+    {
+        if (Elements == null) return true;
+        for (int i = 0; i < Elements.Count; i++)
+        {
+            var el = Elements[i];
+            for (int j = 0; j < el.Pins.Count; j++)
+            {
+                if (Vector2.Distance(pt, el.GetPinWorldPosition(el.Pins[j])) <= threshold)
+                {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
     private (CircuitElement Element, CircuitPin Pin)? FindPinAt(Vector2 worldPos, float radius = 14f)
     {
         for (int i = Elements.Count - 1; i >= 0; i--)
@@ -1266,9 +1045,19 @@ public sealed partial class CircuitCanvas : UserControl
         var screenPos = new Vector2((float)pt.Position.X, (float)pt.Position.Y);
         var worldPos = ScreenToWorld(screenPos);
 
+        // Right or middle mouse button: Pan canvas
+        if (pt.Properties.IsRightButtonPressed || pt.Properties.IsMiddleButtonPressed)
+        {
+            _isPanningCanvas = true;
+            _lastPointerPos = screenPos;
+            Canvas.CapturePointer(e.Pointer);
+            ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.Hand);
+            return;
+        }
+
         // 1. Check if clicked near a Pin or WireTap
         var hitPin = FindPinAt(worldPos);
-        var hitTap = FindWireTapAt(worldPos, 8.0f);
+        var hitTap = FindWireTapAt(worldPos, 16.0f);
 
         if (_isDrawingWire)
         {
@@ -1280,6 +1069,7 @@ public sealed partial class CircuitCanvas : UserControl
                 if (_wireStartParentWire != null)
                 {
                     // Wire-to-Pin!
+                    PushUndoRequested?.Invoke();
                     var wire = new CircuitWire
                     {
                         Id = $"W_{Guid.NewGuid():N}"[..8],
@@ -1303,24 +1093,92 @@ public sealed partial class CircuitCanvas : UserControl
                     if (hitPin.Value.Element != _wireStartElement || hitPin.Value.Pin != _wireStartPin)
                     {
                         // Pin-to-Pin!
+                        PushUndoRequested?.Invoke();
                         var startDir = _wireStartElement.GetPinWorldDirection(_wireStartPin);
                         bool startIsVertical = Math.Abs(startDir.Y) > Math.Abs(startDir.X);
-                        var wire = new CircuitWire
+
+                        // Check if target pin already has an existing wire attached to it that we can tap into perpendicularly:
+                        CircuitWire? candidateWire = null;
+                        Vector2? tapCandidate = null;
+
+                        var targetWires = Wires.Where(w => (w.StartElementId == hitPin.Value.Element.Id && w.StartPinName == hitPin.Value.Pin.Name) ||
+                                                           (w.EndElementId == hitPin.Value.Element.Id && w.EndPinName == hitPin.Value.Pin.Name)).ToList();
+
+                        foreach (var tw in targetWires)
                         {
-                            Id = $"W_{Guid.NewGuid():N}"[..8],
-                            StartElementId = _wireStartElement.Id,
-                            StartPinName = _wireStartPin.Name,
-                            EndElementId = hitPin.Value.Element.Id,
-                            EndPinName = hitPin.Value.Pin.Name,
-                            StartX = _wireStartPos.X,
-                            StartY = _wireStartPos.Y,
-                            EndX = endP.X,
-                            EndY = endP.Y,
-                            FlipCorner = startIsVertical
-                        };
-                        Wires.Add(wire);
-                        WireCreated?.Invoke(wire);
-                        StatusMessageChanged?.Invoke($"已成功连通导线: {_wireStartElement.Id}.{_wireStartPin.Name} ⟷ {hitPin.Value.Element.Id}.{hitPin.Value.Pin.Name}");
+                            var pts = tw.GetPathPoints();
+                            for (int si = 0; si < pts.Count - 1; si++)
+                            {
+                                var sa = pts[si];
+                                var sb = pts[si + 1];
+                                if (Math.Abs(sa.Y - sb.Y) < 1.0f) // Horizontal segment
+                                {
+                                    var proj = new Vector2(_wireStartPos.X, sa.Y);
+                                    float minX = MathF.Min(sa.X, sb.X);
+                                    float maxX = MathF.Max(sa.X, sb.X);
+                                    if (proj.X >= minX + 8f && proj.X <= maxX - 8f && IsOutsidePinKeepOut(proj))
+                                    {
+                                        candidateWire = tw;
+                                        tapCandidate = proj;
+                                        break;
+                                    }
+                                }
+                                else if (Math.Abs(sa.X - sb.X) < 1.0f) // Vertical segment
+                                {
+                                    var proj = new Vector2(sa.X, _wireStartPos.Y);
+                                    float minY = MathF.Min(sa.Y, sb.Y);
+                                    float maxY = MathF.Max(sa.Y, sb.Y);
+                                    if (proj.Y >= minY + 8f && proj.Y <= maxY - 8f && IsOutsidePinKeepOut(proj))
+                                    {
+                                        candidateWire = tw;
+                                        tapCandidate = proj;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (candidateWire != null) break;
+                        }
+
+                        if (candidateWire != null && tapCandidate != null)
+                        {
+                            var wire = new CircuitWire
+                            {
+                                Id = $"W_{Guid.NewGuid():N}"[..8],
+                                StartElementId = _wireStartElement.Id,
+                                StartPinName = _wireStartPin.Name,
+                                EndElementId = candidateWire.Id,
+                                EndPinName = "WireTap",
+                                StartX = _wireStartPos.X,
+                                StartY = _wireStartPos.Y,
+                                EndX = tapCandidate.Value.X,
+                                EndY = tapCandidate.Value.Y,
+                                FlipCorner = startIsVertical,
+                                NetId = candidateWire.NetId
+                            };
+                            Wires.Add(wire);
+                            WireCreated?.Invoke(wire);
+                            StatusMessageChanged?.Invoke($"已自动统一至共享导线路径并在节点处接入: {wire.Id}");
+                        }
+                        else
+                        {
+                            // Direct connection
+                            var wire = new CircuitWire
+                            {
+                                Id = $"W_{Guid.NewGuid():N}"[..8],
+                                StartElementId = _wireStartElement.Id,
+                                StartPinName = _wireStartPin.Name,
+                                EndElementId = hitPin.Value.Element.Id,
+                                EndPinName = hitPin.Value.Pin.Name,
+                                StartX = _wireStartPos.X,
+                                StartY = _wireStartPos.Y,
+                                EndX = endP.X,
+                                EndY = endP.Y,
+                                FlipCorner = startIsVertical
+                            };
+                            Wires.Add(wire);
+                            WireCreated?.Invoke(wire);
+                            StatusMessageChanged?.Invoke($"已成功连通导线: {_wireStartElement.Id}.{_wireStartPin.Name} ⟷ {hitPin.Value.Element.Id}.{hitPin.Value.Pin.Name}");
+                        }
                     }
                 }
 
@@ -1341,6 +1199,7 @@ public sealed partial class CircuitCanvas : UserControl
                 if (_wireStartParentWire != null && _wireStartParentWire != targetWire)
                 {
                     // Wire-to-Wire!
+                    PushUndoRequested?.Invoke();
                     var wire = new CircuitWire
                     {
                         Id = $"W_{Guid.NewGuid():N}"[..8],
@@ -1362,6 +1221,7 @@ public sealed partial class CircuitCanvas : UserControl
                 else if (_wireStartElement != null && _wireStartPin != null)
                 {
                     // Pin-to-Wire!
+                    PushUndoRequested?.Invoke();
                     var startDir = _wireStartElement.GetPinWorldDirection(_wireStartPin);
                     bool startIsVertical = Math.Abs(startDir.Y) > Math.Abs(startDir.X);
                     var wire = new CircuitWire
@@ -1404,89 +1264,45 @@ public sealed partial class CircuitCanvas : UserControl
             }
         }
 
-        // Not currently drawing wire: check if starting to draw a wire
-        if (hitPin != null)
+        // Not currently drawing wire:
+        // A) If explicitly in Wire Mode, allow tapping wires and starting wires from pins
+        if (IsWireMode)
         {
-            // Start from Pin
-            _isDrawingWire = true;
-            _wireStartElement = hitPin.Value.Element;
-            _wireStartPin = hitPin.Value.Pin;
-            _wireStartParentWire = null;
-            _wireStartPos = hitPin.Value.Element.GetPinWorldPosition(hitPin.Value.Pin);
-            _currentWireEnd = _wireStartPos;
-            Canvas.CapturePointer(e.Pointer);
-            StatusMessageChanged?.Invoke($"正在连接导线: 从 {hitPin.Value.Element.Id}.{hitPin.Value.Pin.Name} 出发，点击目标引脚或母线完成连接，按 Esc 取消");
-            Canvas.Invalidate();
-            return;
-        }
-        else if (IsWireMode && hitTap.HasValue)
-        {
-            // Start from WireTap (WireMode active)
-            _isDrawingWire = true;
-            _wireStartElement = null;
-            _wireStartPin = null;
-            _wireStartParentWire = hitTap.Value.Wire;
-            _wireStartPos = hitTap.Value.SnapPos;
-            _currentWireEnd = _wireStartPos;
-            Canvas.CapturePointer(e.Pointer);
-            StatusMessageChanged?.Invoke($"正在引出母线支路: 从 {hitTap.Value.Wire.Id} ({hitTap.Value.SnapPos.X}, {hitTap.Value.SnapPos.Y}) 出发，点击目标引脚或母线完成连接");
-            Canvas.Invalidate();
-            return;
-        }
-
-        // 2. Check if hit testing any Wire
-        CircuitWire? hitWire = null;
-        int hitCorner = -1;
-        int hitSegment = -1;
-        bool hitSegHoriz = false;
-
-        for (int i = Wires.Count - 1; i >= 0; i--)
-        {
-            var w = Wires[i];
-            int c = w.HitTestCorner(worldPos, 8f);
-            if (c >= 0)
+            if (hitPin != null)
             {
-                hitWire = w;
-                hitCorner = c;
-                break;
+                // Start from Pin
+                _isDrawingWire = true;
+                _wireStartElement = hitPin.Value.Element;
+                _wireStartPin = hitPin.Value.Pin;
+                _wireStartParentWire = null;
+                _wireStartPos = hitPin.Value.Element.GetPinWorldPosition(hitPin.Value.Pin);
+                _currentWireEnd = _wireStartPos;
+                Canvas.CapturePointer(e.Pointer);
+                StatusMessageChanged?.Invoke($"正在连接导线: 从 {hitPin.Value.Element.Id}.{hitPin.Value.Pin.Name} 出发，点击目标引脚或母线完成连接，按 Esc 取消");
+                Canvas.Invalidate();
+                return;
             }
-            if (w.HitTestSegment(worldPos, out int s, out bool h, 6f))
+            else if (hitTap.HasValue)
             {
-                hitWire = w;
-                hitSegment = s;
-                hitSegHoriz = h;
-                break;
-            }
-            if (w.HitTest(worldPos, 8f))
-            {
-                hitWire = w;
-                break;
+                // Start from WireTap
+                _isDrawingWire = true;
+                _wireStartElement = null;
+                _wireStartPin = null;
+                _wireStartParentWire = hitTap.Value.Wire;
+                _wireStartPos = hitTap.Value.SnapPos;
+                _currentWireEnd = _wireStartPos;
+                Canvas.CapturePointer(e.Pointer);
+                StatusMessageChanged?.Invoke($"正在引出母线支路: 从 {hitTap.Value.Wire.Id} ({hitTap.Value.SnapPos.X}, {hitTap.Value.SnapPos.Y}) 出发，点击目标引脚或母线完成连接");
+                Canvas.Invalidate();
+                return;
             }
         }
 
-        if (hitWire != null)
-        {
-            SelectedWire = hitWire;
-            SelectedElement = null;
-            ElementSelected?.Invoke(null);
-            UpdateSelectionBar(null);
+        // B) Normal Selection & Editing Mode:
+        bool isCtrlOrShift = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down) ||
+                             Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
 
-            // Directly start interactive drag on canvas
-            _isDraggingWire = true;
-            _draggedWire = hitWire;
-            _draggedCornerIndex = hitCorner;
-            _draggedSegmentIndex = hitSegment;
-            _draggedSegmentIsHorizontal = hitSegHoriz;
-            _dragStartPointerPos = worldPos;
-
-            Canvas.CapturePointer(e.Pointer);
-            ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.SizeAll);
-            StatusMessageChanged?.Invoke($"已选中导线 · 拖拽拐角或线段可直接调整走线 · 按 [Del] 键删除");
-            Canvas.Invalidate();
-            return;
-        }
-
-        // 3. Check if hit testing any CircuitElement
+        // Check if cursor hits an element or wire
         CircuitElement? hitElement = null;
         for (int i = Elements.Count - 1; i >= 0; i--)
         {
@@ -1497,34 +1313,172 @@ public sealed partial class CircuitCanvas : UserControl
             }
         }
 
-        if (hitElement != null)
-        {
-            SelectedElement = hitElement;
-            SelectedWire = null;
-            ElementSelected?.Invoke(hitElement);
+        var hitWire = FindWireAt(worldPos, out int hitSegment, out bool hitSegHoriz);
 
-            _isDraggingElement = true;
-            _draggedElement = hitElement;
+        // 1. Check if user clicked on an ALREADY SELECTED element, or a selected wire in a multi-element selection
+        bool clickedOnSelectedElement = hitElement != null && hitElement.IsSelected;
+        bool clickedOnSelectedWireWithElements = hitWire != null && hitWire.IsSelected && Elements.Any(el => el.IsSelected);
+
+        if (clickedOnSelectedElement || clickedOnSelectedWireWithElements)
+        {
+            // Initiate group dragging of the selected elements & internal interconnects
+            PushUndoRequested?.Invoke();
+            _isDraggingSelection = true;
             _dragStartPointerPos = worldPos;
-            _dragStartElementPos = new Vector2(hitElement.X, hitElement.Y);
+            _dragStartElementPositions.Clear();
+            _dragStartWireWaypoints.Clear();
+            _dragStartWireEndpoints.Clear();
+
+            var selectedElements = Elements.Where(el => el.IsSelected).ToList();
+            foreach (var el in selectedElements)
+            {
+                _dragStartElementPositions[el] = new Vector2(el.X, el.Y);
+            }
+
+            // Topology Invariant: ONLY internal wires whose BOTH endpoints connect to moving elements may rigidly translate!
+            // All boundary wires connecting to stationary elements or bus rails MUST remain anchored!
+            var selectedIds = selectedElements.Select(el => el.Id).ToHashSet();
+            foreach (var w in Wires)
+            {
+                if (selectedIds.Contains(w.StartElementId) && selectedIds.Contains(w.EndElementId))
+                {
+                    _dragStartWireEndpoints[w] = (new Vector2(w.StartX, w.StartY), new Vector2(w.EndX, w.EndY));
+                    _dragStartWireWaypoints[w] = w.Waypoints.Select(p => new Vector2(p.X, p.Y)).ToList();
+                }
+            }
 
             Canvas.CapturePointer(e.Pointer);
             ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.SizeAll);
+            StatusMessageChanged?.Invoke($"正在拖拽所选区域 ({selectedElements.Count} 个元件)");
             Canvas.Invalidate();
+            return;
         }
-        else
+
+        // 2. Check if clicked directly on a component's Pin to start a wire
+        if (hitPin != null)
         {
-            // Clicked empty space: deselect and pan canvas
+            _isDrawingWire = true;
+            _wireStartElement = hitPin.Value.Element;
+            _wireStartPin = hitPin.Value.Pin;
+            _wireStartParentWire = null;
+            _wireStartPos = hitPin.Value.Element.GetPinWorldPosition(hitPin.Value.Pin);
+            _currentWireEnd = _wireStartPos;
+            Canvas.CapturePointer(e.Pointer);
+            StatusMessageChanged?.Invoke($"正在连接导线: 从 {hitPin.Value.Element.Id}.{hitPin.Value.Pin.Name} 出发，点击目标引脚或导线完成连接，按 Esc 取消");
+            Canvas.Invalidate();
+            return;
+        }
+
+        // 3. User clicked on an UNSELECTED element
+        if (hitElement != null)
+        {
+            if (isCtrlOrShift)
+            {
+                hitElement.IsSelected = true;
+                SelectedElement = hitElement;
+            }
+            else
+            {
+                foreach (var el in Elements) el.IsSelected = (el == hitElement);
+                foreach (var w in Wires) w.IsSelected = false;
+                SelectedElement = hitElement;
+                SelectedWire = null;
+            }
+
+            PushUndoRequested?.Invoke();
+            _isDraggingSelection = true;
+            _dragStartPointerPos = worldPos;
+            _dragStartElementPositions.Clear();
+            _dragStartWireWaypoints.Clear();
+            _dragStartWireEndpoints.Clear();
+
+            var currentSelectedElements = Elements.Where(el => el.IsSelected).ToList();
+            foreach (var el in currentSelectedElements)
+            {
+                _dragStartElementPositions[el] = new Vector2(el.X, el.Y);
+            }
+            var selIds = currentSelectedElements.Select(el => el.Id).ToHashSet();
+            foreach (var w in Wires)
+            {
+                if (selIds.Contains(w.StartElementId) && selIds.Contains(w.EndElementId))
+                {
+                    _dragStartWireEndpoints[w] = (new Vector2(w.StartX, w.StartY), new Vector2(w.EndX, w.EndY));
+                    _dragStartWireWaypoints[w] = w.Waypoints.Select(p => new Vector2(p.X, p.Y)).ToList();
+                }
+            }
+
+            Canvas.CapturePointer(e.Pointer);
+            ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.SizeAll);
+            ElementSelected?.Invoke(SelectedElement);
+            UpdateSelectionBar(currentSelectedElements.Count == 1 ? SelectedElement : null);
+            if (currentSelectedElements.Count > 1)
+            {
+                SelectionActionBar.Visibility = Visibility.Visible;
+                SelectionBarText.Text = $"已选中 {currentSelectedElements.Count} 个元件";
+                if (RotateButton != null) RotateButton.Visibility = Visibility.Visible;
+            }
+            Canvas.Invalidate();
+            return;
+        }
+
+        // 4. User clicked on a WIRE: always drag wire segment, preserving endpoint pin/rail anchoring!
+        if (hitWire != null)
+        {
+            PushUndoRequested?.Invoke();
+            if (isCtrlOrShift)
+            {
+                hitWire.IsSelected = !hitWire.IsSelected;
+                SelectedWire = hitWire.IsSelected ? hitWire : null;
+            }
+            else
+            {
+                if (!hitWire.IsSelected)
+                {
+                    foreach (var el in Elements) el.IsSelected = false;
+                    foreach (var w in Wires) w.IsSelected = (w == hitWire);
+                    SelectedElement = null;
+                }
+                SelectedWire = hitWire;
+            }
+            WireSelected?.Invoke(SelectedWire);
+            ElementSelected?.Invoke(SelectedElement);
+            UpdateSelectionBar(SelectedElement);
+
+            _isDraggingWire = true;
+            _draggedWire = hitWire;
+            _draggedSegmentIndex = hitSegment;
+            _draggedSegmentIsHorizontal = hitSegHoriz;
+            _dragWireBaselinePoints = hitWire.GetPathPoints();
+            _dragStartPointerPos = worldPos;
+
+            Canvas.CapturePointer(e.Pointer);
+            ProtectedCursor = hitSegHoriz
+                ? InputSystemCursor.Create(InputSystemCursorShape.SizeNorthSouth)
+                : InputSystemCursor.Create(InputSystemCursorShape.SizeWestEast);
+
+            StatusMessageChanged?.Invoke($"已选中导线 {hitWire.Id} · 拖拽平移线段，节点始终保持连通");
+            Canvas.Invalidate();
+            return;
+        }
+
+        // 5. Clicked empty space: Windows-style Rubberband Box Selection
+        if (!isCtrlOrShift)
+        {
+            foreach (var el in Elements) el.IsSelected = false;
+            foreach (var w in Wires) w.IsSelected = false;
             SelectedElement = null;
             SelectedWire = null;
             ElementSelected?.Invoke(null);
-
-            _isPanningCanvas = true;
-            _lastPointerPos = screenPos;
-            Canvas.CapturePointer(e.Pointer);
-            ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.Hand);
-            Canvas.Invalidate();
+            WireSelected?.Invoke(null);
+            UpdateSelectionBar(null);
         }
+
+        _isBoxSelecting = true;
+        _boxSelectStart = worldPos;
+        _boxSelectCurrent = worldPos;
+        Canvas.CapturePointer(e.Pointer);
+        ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.Arrow);
+        Canvas.Invalidate();
     }
 
     private void Canvas_PointerMoved(object sender, PointerRoutedEventArgs e)
@@ -1534,90 +1488,165 @@ public sealed partial class CircuitCanvas : UserControl
         var worldPos = ScreenToWorld(currentScreenPos);
         CursorCoordinatesChanged?.Invoke(worldPos.X, worldPos.Y);
 
-        if (_isDraggingWire && _draggedWire != null)
-        {
-            ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.SizeAll);
-
-            var p1 = new Vector2(_draggedWire.StartX, _draggedWire.StartY);
-            var p2 = new Vector2(_draggedWire.EndX, _draggedWire.EndY);
-
-            if (_draggedCornerIndex >= 0)
-            {
-                // Dragging a corner handle
-                float snappedX = MathF.Round(worldPos.X / 10f) * 10f;
-                float snappedY = MathF.Round(worldPos.Y / 10f) * 10f;
-
-                var cornerA = new Vector2(p1.X, p2.Y); // FlipCorner = true
-                var cornerB = new Vector2(p2.X, p1.Y); // FlipCorner = false
-
-                bool newFlip = Vector2.Distance(worldPos, cornerA) < Vector2.Distance(worldPos, cornerB);
-                if (_draggedWire.FlipCorner != newFlip)
-                {
-                    _draggedWire.FlipCorner = newFlip;
-                }
-
-                if (_draggedWire.FlipCorner)
-                {
-                    _draggedWire.CustomMid = snappedY;
-                }
-                else
-                {
-                    _draggedWire.CustomMid = snappedX;
-                }
-
-                Canvas.Invalidate();
-            }
-            else if (_draggedSegmentIndex >= 0)
-            {
-                // Dragging an intermediate segment perpendicularly
-                if (_draggedSegmentIsHorizontal)
-                {
-                    float snappedY = MathF.Round(worldPos.Y / 10f) * 10f;
-                    _draggedWire.CustomMid = snappedY;
-                }
-                else
-                {
-                    float snappedX = MathF.Round(worldPos.X / 10f) * 10f;
-                    _draggedWire.CustomMid = snappedX;
-                }
-                Canvas.Invalidate();
-            }
-            else
-            {
-                // General wire drag: toggle flip corner based on pointer proximity
-                var cornerA = new Vector2(p1.X, p2.Y);
-                var cornerB = new Vector2(p2.X, p1.Y);
-                bool newFlip = Vector2.Distance(worldPos, cornerA) < Vector2.Distance(worldPos, cornerB);
-                if (_draggedWire.FlipCorner != newFlip)
-                {
-                    _draggedWire.FlipCorner = newFlip;
-                    Canvas.Invalidate();
-                }
-            }
-        }
-        else if (_isDraggingElement && _draggedElement != null)
-        {
-            ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.SizeAll);
-
-            var delta = worldPos - _dragStartPointerPos;
-            float newX = MathF.Round((_dragStartElementPos.X + delta.X) / 10f) * 10f;
-            float newY = MathF.Round((_dragStartElementPos.Y + delta.Y) / 10f) * 10f;
-
-            _draggedElement.X = newX;
-            _draggedElement.Y = newY;
-            ElementMoved?.Invoke(_draggedElement);
-
-            // Dynamically update connected wires
-            SyncConnectedWiresToElement(_draggedElement);
-
-            Canvas.Invalidate();
-        }
-        else if (_isPanningCanvas)
+        if (_isPanningCanvas)
         {
             ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.Hand);
             var delta = currentScreenPos - _lastPointerPos;
             _lastPointerPos = currentScreenPos;
             _translation += delta;
+            Canvas.Invalidate();
+        }
+        else if (_isDraggingWire && _draggedWire != null && _draggedSegmentIndex >= 0)
+        {
+            ProtectedCursor = _draggedSegmentIsHorizontal
+                ? InputSystemCursor.Create(InputSystemCursorShape.SizeNorthSouth)
+                : InputSystemCursor.Create(InputSystemCursorShape.SizeWestEast);
+
+            float snappedVal = _draggedSegmentIsHorizontal
+                ? MathF.Round(worldPos.Y / 10f) * 10f
+                : MathF.Round(worldPos.X / 10f) * 10f;
+
+            // If a single straight wire connects to a parent bus rail via WireTap, allow the tap to slide along the rail
+            if (_dragWireBaselinePoints.Count == 2)
+            {
+                if (!_draggedSegmentIsHorizontal)
+                {
+                    if (_draggedWire.StartPinName == "WireTap")
+                    {
+                        var parent = Wires.FirstOrDefault(pw => pw.Id == _draggedWire.StartElementId);
+                        if (parent != null)
+                        {
+                            var proj = parent.ProjectTapPerpendicular(new Vector2(snappedVal, _dragWireBaselinePoints[0].Y));
+                            if (MathF.Abs(proj.X - snappedVal) < 1.0f)
+                            {
+                                _draggedWire.StartX = proj.X;
+                                _draggedWire.StartY = proj.Y;
+                            }
+                        }
+                    }
+                    if (_draggedWire.EndPinName == "WireTap")
+                    {
+                        var parent = Wires.FirstOrDefault(pw => pw.Id == _draggedWire.EndElementId);
+                        if (parent != null)
+                        {
+                            var proj = parent.ProjectTapPerpendicular(new Vector2(snappedVal, _dragWireBaselinePoints[^1].Y));
+                            if (MathF.Abs(proj.X - snappedVal) < 1.0f)
+                            {
+                                _draggedWire.EndX = proj.X;
+                                _draggedWire.EndY = proj.Y;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    if (_draggedWire.StartPinName == "WireTap")
+                    {
+                        var parent = Wires.FirstOrDefault(pw => pw.Id == _draggedWire.StartElementId);
+                        if (parent != null)
+                        {
+                            var proj = parent.ProjectTapPerpendicular(new Vector2(_dragWireBaselinePoints[0].X, snappedVal));
+                            if (MathF.Abs(proj.Y - snappedVal) < 1.0f)
+                            {
+                                _draggedWire.StartX = proj.X;
+                                _draggedWire.StartY = proj.Y;
+                            }
+                        }
+                    }
+                    if (_draggedWire.EndPinName == "WireTap")
+                    {
+                        var parent = Wires.FirstOrDefault(pw => pw.Id == _draggedWire.EndElementId);
+                        if (parent != null)
+                        {
+                            var proj = parent.ProjectTapPerpendicular(new Vector2(_dragWireBaselinePoints[^1].X, snappedVal));
+                            if (MathF.Abs(proj.Y - snappedVal) < 1.0f)
+                            {
+                                _draggedWire.EndX = proj.X;
+                                _draggedWire.EndY = proj.Y;
+                            }
+                        }
+                    }
+                }
+            }
+
+            _draggedWire.MoveSegmentFromBaseline(_dragWireBaselinePoints, _draggedSegmentIndex, _draggedSegmentIsHorizontal, snappedVal);
+            SyncConnectedWiresToWire(_draggedWire);
+            Canvas.Invalidate();
+        }
+        else if (_isDraggingSelection)
+        {
+            ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.SizeAll);
+
+            var rawDelta = worldPos - _dragStartPointerPos;
+            float snappedDeltaX = MathF.Round(rawDelta.X / 10f) * 10f;
+            float snappedDeltaY = MathF.Round(rawDelta.Y / 10f) * 10f;
+            var snappedDelta = new Vector2(snappedDeltaX, snappedDeltaY);
+
+            // 1. Move all selected elements
+            foreach (var (el, startPos) in _dragStartElementPositions)
+            {
+                el.X = startPos.X + snappedDelta.X;
+                el.Y = startPos.Y + snappedDelta.Y;
+                ElementMoved?.Invoke(el);
+            }
+
+            // 2. Rigid translation of internal and selected wires
+            foreach (var (w, (startP, endP)) in _dragStartWireEndpoints)
+            {
+                w.StartX = startP.X + snappedDelta.X;
+                w.StartY = startP.Y + snappedDelta.Y;
+                w.EndX = endP.X + snappedDelta.X;
+                w.EndY = endP.Y + snappedDelta.Y;
+                if (_dragStartWireWaypoints.TryGetValue(w, out var initialWps))
+                {
+                    w.Waypoints = initialWps.Select(wp => wp + snappedDelta).ToList();
+                }
+            }
+
+            // 3. Synchronize external wires connected to the moved elements
+            var movingWires = _dragStartWireEndpoints.Keys.ToHashSet();
+            var movedElementIds = _dragStartElementPositions.Keys.Select(el => el.Id).ToHashSet();
+            SyncExternalConnectedWires(movedElementIds, movingWires);
+
+            Canvas.Invalidate();
+        }
+        else if (_isBoxSelecting)
+        {
+            ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.Arrow);
+            _boxSelectCurrent = worldPos;
+
+            float minX = MathF.Min(_boxSelectStart.X, _boxSelectCurrent.X);
+            float maxX = MathF.Max(_boxSelectStart.X, _boxSelectCurrent.X);
+            float minY = MathF.Min(_boxSelectStart.Y, _boxSelectCurrent.Y);
+            float maxY = MathF.Max(_boxSelectStart.Y, _boxSelectCurrent.Y);
+            var box = new Rect(minX, minY, MathF.Max(maxX - minX, 1f), MathF.Max(maxY - minY, 1f));
+
+            int selectedCount = 0;
+            CircuitElement? firstSelected = null;
+            foreach (var el in Elements)
+            {
+                bool inBox = RectsIntersect(box, el.GetBounds());
+                el.IsSelected = inBox;
+                if (inBox)
+                {
+                    selectedCount++;
+                    firstSelected ??= el;
+                }
+            }
+            foreach (var w in Wires)
+            {
+                w.IsSelected = WireIntersectsBox(w, box);
+            }
+
+            SelectedElement = firstSelected;
+            UpdateSelectionBar(selectedCount == 1 ? firstSelected : null);
+            if (selectedCount > 1)
+            {
+                SelectionActionBar.Visibility = Visibility.Visible;
+                SelectionBarText.Text = $"已选中 {selectedCount} 个元件";
+                if (RotateButton != null) RotateButton.Visibility = Visibility.Visible;
+            }
+
             Canvas.Invalidate();
         }
         else if (_isDrawingWire)
@@ -1645,25 +1674,38 @@ public sealed partial class CircuitCanvas : UserControl
         }
         else
         {
-            // Hover detection: Pin vs WireTap vs Element vs Wire vs Canvas
+            // Hover detection: Pin vs WireTap vs Selected Item vs Wire vs Element vs Canvas
             _hoveredPin = FindPinAt(worldPos);
             _hoveredWireTap = FindWireTapAt(worldPos, 8.0f);
 
-            if (_hoveredPin.HasValue)
-            {
-                ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.Cross);
-            }
-            else if (_hoveredWireTap.HasValue)
+            if (_hoveredPin.HasValue || _hoveredWireTap.HasValue)
             {
                 ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.Cross);
             }
             else
             {
-                bool isOverElement = Elements.Any(el => el.HitTest(worldPos));
-                bool isOverWire = Wires.Any(w => w.HitTest(worldPos, 6f));
-                ProtectedCursor = (isOverElement || isOverWire)
-                    ? InputSystemCursor.Create(InputSystemCursorShape.Hand)
-                    : InputSystemCursor.Create(InputSystemCursorShape.Arrow);
+                var hoverEl = Elements.FirstOrDefault(el => el.HitTest(worldPos));
+                var hoverWire = FindWireAt(worldPos, out int hSeg, out bool hHoriz);
+
+                if ((hoverEl != null && hoverEl.IsSelected) || (hoverWire != null && hoverWire.IsSelected))
+                {
+                    // Over any selected item: show SizeAll indicating the selection can be dragged!
+                    ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.SizeAll);
+                }
+                else if (hoverWire != null)
+                {
+                    ProtectedCursor = hHoriz
+                        ? InputSystemCursor.Create(InputSystemCursorShape.SizeNorthSouth)
+                        : InputSystemCursor.Create(InputSystemCursorShape.SizeWestEast);
+                }
+                else if (hoverEl != null)
+                {
+                    ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.Hand);
+                }
+                else
+                {
+                    ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.Arrow);
+                }
             }
             Canvas.Invalidate();
         }
@@ -1671,12 +1713,44 @@ public sealed partial class CircuitCanvas : UserControl
 
     private void Canvas_PointerReleased(object sender, PointerRoutedEventArgs e)
     {
+        if (_isDraggingWire && _draggedWire != null)
+        {
+            var pts = _draggedWire.GetPathPoints();
+            if (pts.Count > 2)
+            {
+                _draggedWire.Waypoints = pts.Skip(1).SkipLast(1).ToList();
+            }
+            else
+            {
+                _draggedWire.Waypoints.Clear();
+            }
+            SyncConnectedWiresToWire(_draggedWire);
+        }
+
         _isDraggingWire = false;
         _draggedWire = null;
-        _draggedCornerIndex = -1;
         _draggedSegmentIndex = -1;
-        _isDraggingElement = false;
-        _draggedElement = null;
+        _dragWireBaselinePoints.Clear();
+
+        if (_isDraggingSelection)
+        {
+            _isDraggingSelection = false;
+            _dragStartElementPositions.Clear();
+            _dragStartWireEndpoints.Clear();
+            _dragStartWireWaypoints.Clear();
+        }
+
+        if (_isBoxSelecting)
+        {
+            _isBoxSelecting = false;
+            float dist = Vector2.Distance(_boxSelectStart, _boxSelectCurrent);
+            if (dist < 4f)
+            {
+                // Simple click in empty space: deselect all
+                DeselectSelected();
+            }
+        }
+
         _isPanningCanvas = false;
         Canvas.ReleasePointerCapture(e.Pointer);
         ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.Arrow);
@@ -1726,14 +1800,30 @@ public sealed partial class CircuitCanvas : UserControl
     // =========================================================================
     private void CircuitCanvas_KeyDown(object sender, KeyRoutedEventArgs e)
     {
-        if (e.Key == VirtualKey.R)
+        if (e.Key is VirtualKey.Space or VirtualKey.R)
         {
             RotateSelected();
+            e.Handled = true;
+        }
+        else if (e.Key == VirtualKey.Z && Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down))
+        {
+            UndoRequested?.Invoke();
+            e.Handled = true;
+        }
+        else if (e.Key == VirtualKey.Y && Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down))
+        {
+            RedoRequested?.Invoke();
             e.Handled = true;
         }
         else if (e.Key is VirtualKey.Delete or VirtualKey.Back)
         {
             DeleteSelected();
+            e.Handled = true;
+        }
+        else if (e.Key == VirtualKey.X &&
+                 Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Menu).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down))
+        {
+            MirrorSelected();
             e.Handled = true;
         }
         else if (e.Key == VirtualKey.Escape)
@@ -1748,42 +1838,118 @@ public sealed partial class CircuitCanvas : UserControl
         }
     }
 
+    public void StartBranchFromWire(CircuitWire? wire)
+    {
+        if (wire == null) return;
+        var pts = wire.GetPathPoints();
+        Vector2 tapPos = (pts.Count >= 2) ? (pts[0] + pts[^1]) * 0.5f : new Vector2(wire.StartX, wire.StartY);
+        _isDrawingWire = true;
+        _wireStartElement = null;
+        _wireStartPin = null;
+        _wireStartParentWire = wire;
+        _wireStartPos = tapPos;
+        _currentWireEnd = _wireStartPos;
+        StatusMessageChanged?.Invoke($"正在引出母线支路: 从 {wire.Id} 出发，点击目标引脚或导线完成连接");
+        Canvas?.Invalidate();
+    }
+
     public void RotateSelected()
     {
-        if (SelectedElement != null)
+        var selectedEls = Elements.Where(e => e.IsSelected).ToList();
+        if (selectedEls.Count == 0 && SelectedElement != null) selectedEls.Add(SelectedElement);
+
+        if (selectedEls.Count > 0)
         {
-            SelectedElement.RotationDeg = (SelectedElement.RotationDeg + 90) % 360;
-            SelectedElement.Orientation = (SelectedElement.RotationDeg % 180 == 0) ? "Horizontal" : "Vertical";
-            SyncConnectedWiresToElement(SelectedElement);
-            UpdateSelectionBar(SelectedElement);
-            StatusMessageChanged?.Invoke($"元件 {SelectedElement.Id} 已顺时针旋转至 {SelectedElement.RotationDeg}° ({SelectedElement.Orientation})");
+            PushUndoRequested?.Invoke();
+            foreach (var el in selectedEls)
+            {
+                el.RotationDeg = (el.RotationDeg + 90) % 360;
+                el.Orientation = (el.RotationDeg % 180 == 0) ? "Horizontal" : "Vertical";
+                CircuitWireSync.SyncConnectedWiresToElement(Wires, el);
+            }
+            UpdateSelectionBar(selectedEls.Count == 1 ? selectedEls[0] : null);
+            if (selectedEls.Count > 1)
+            {
+                SelectionActionBar.Visibility = Visibility.Visible;
+                SelectionBarText.Text = $"已选中 {selectedEls.Count} 个元件";
+                if (RotateButton != null) RotateButton.Visibility = Visibility.Visible;
+                if (MirrorButton != null) MirrorButton.Visibility = Visibility.Visible;
+            }
+            StatusMessageChanged?.Invoke($"已将选中的 {selectedEls.Count} 个元件顺时针旋转 90°");
             Canvas.Invalidate();
         }
     }
 
+    /// <summary>
+    /// Toggle horizontal mirror for every selected element (ALT+X). Wires and
+    /// WireTap branch nodes are re-projected through the shared
+    /// CircuitWireSync helper so solder dots follow the mirrored pins.
+    /// </summary>
+    public void MirrorSelected()
+    {
+        var selectedEls = Elements.Where(e => e.IsSelected).ToList();
+        if (selectedEls.Count == 0 && SelectedElement != null) selectedEls.Add(SelectedElement);
+        if (selectedEls.Count == 0) return;
+
+        PushUndoRequested?.Invoke();
+        // All-or-nothing for a multi-selection: if any selected element is still
+        // normal, mirror the whole selection; otherwise unmirror it.
+        bool targetMirrored = selectedEls.Any(el => !el.MirrorX);
+        foreach (var el in selectedEls)
+        {
+            el.MirrorX = targetMirrored;
+            CircuitWireSync.SyncConnectedWiresToElement(Wires, el);
+        }
+
+        UpdateSelectionBar(selectedEls.Count == 1 ? selectedEls[0] : null);
+        if (selectedEls.Count > 1)
+        {
+            SelectionActionBar.Visibility = Visibility.Visible;
+            SelectionBarText.Text = $"已选中 {selectedEls.Count} 个元件";
+            if (RotateButton != null) RotateButton.Visibility = Visibility.Visible;
+            if (MirrorButton != null) MirrorButton.Visibility = Visibility.Visible;
+        }
+        StatusMessageChanged?.Invoke(targetMirrored
+            ? $"已将选中的 {selectedEls.Count} 个元件水平镜像（ALT+X 可恢复）"
+            : $"已取消选中的 {selectedEls.Count} 个元件的水平镜像");
+        Canvas.Invalidate();
+    }
+
     public void DeleteSelected()
     {
-        if (SelectedElement != null)
-        {
-            var el = SelectedElement;
-            // Remove all wires connected to this element
-            var attachedWires = Wires.Where(w => w.StartElementId == el.Id || w.EndElementId == el.Id).ToList();
-            foreach (var w in attachedWires) Wires.Remove(w);
+        var selectedEls = Elements.Where(e => e.IsSelected).ToList();
+        var selectedWires = Wires.Where(w => w.IsSelected).ToList();
+        if (selectedEls.Count == 0 && SelectedElement != null) selectedEls.Add(SelectedElement);
+        if (selectedWires.Count == 0 && SelectedWire != null) selectedWires.Add(SelectedWire);
 
-            Elements.Remove(el);
-            SelectedElement = null;
-            ElementSelected?.Invoke(null);
-            StatusMessageChanged?.Invoke($"已从画布移除元件 {el.Name}");
-            Canvas.Invalidate();
-        }
-        else if (SelectedWire != null)
+        if (selectedEls.Count == 0 && selectedWires.Count == 0) return;
+
+        PushUndoRequested?.Invoke();
+
+        var deletedElIds = selectedEls.Select(e => e.Id).ToHashSet();
+        var attachedWires = Wires.Where(w => deletedElIds.Contains(w.StartElementId) || deletedElIds.Contains(w.EndElementId)).ToList();
+        foreach (var w in attachedWires)
         {
-            var w = SelectedWire;
             Wires.Remove(w);
-            SelectedWire = null;
-            StatusMessageChanged?.Invoke("已删除导线连接");
-            Canvas.Invalidate();
+            selectedWires.Remove(w);
         }
+        foreach (var w in selectedWires)
+        {
+            Wires.Remove(w);
+        }
+        CircuitWire.RemoveWithDescendants(Wires, attachedWires.Concat(selectedWires).Select(w => w.Id));
+        foreach (var el in selectedEls)
+        {
+            Elements.Remove(el);
+        }
+
+        SelectedElement = null;
+        SelectedWire = null;
+        ElementSelected?.Invoke(null);
+        WireSelected?.Invoke(null);
+        UpdateSelectionBar(null);
+        StatusMessageChanged?.Invoke($"已删除 {selectedEls.Count} 个元件和 {attachedWires.Count + selectedWires.Count} 根导线");
+        Canvas.Invalidate();
     }
 
     public void DeselectSelected()
@@ -1791,6 +1957,7 @@ public sealed partial class CircuitCanvas : UserControl
         _isDrawingWire = false;
         _wireStartElement = null;
         _wireStartPin = null;
+        _wireStartParentWire = null;
 
         SelectedElement = null;
         SelectedWire = null;
@@ -1798,48 +1965,85 @@ public sealed partial class CircuitCanvas : UserControl
         foreach (var w in Wires) w.IsSelected = false;
 
         ElementSelected?.Invoke(null);
+        WireSelected?.Invoke(null);
+        UpdateSelectionBar(null);
         Canvas.Invalidate();
     }
 
-    private void SyncConnectedWiresToElement(CircuitElement el)
+    private void SyncConnectedWiresToWire(CircuitWire movedWire)
+    {
+        foreach (var w in Wires)
+        {
+            if (w == movedWire) continue;
+            if (w.EndPinName == "WireTap" && w.EndElementId == movedWire.Id)
+            {
+                var newTap = movedWire.ProjectTapPerpendicular(new Vector2(w.StartX, w.StartY));
+                w.EndX = newTap.X;
+                w.EndY = newTap.Y;
+            }
+            else if (w.StartPinName == "WireTap" && w.StartElementId == movedWire.Id)
+            {
+                var newTap = movedWire.ProjectTapPerpendicular(new Vector2(w.EndX, w.EndY));
+                w.StartX = newTap.X;
+                w.StartY = newTap.Y;
+            }
+        }
+    }
+
+    private CircuitWire? FindWireAt(Vector2 worldPos, out int hitSegment, out bool hitSegHoriz)
+    {
+        hitSegment = -1;
+        hitSegHoriz = false;
+
+        for (int i = Wires.Count - 1; i >= 0; i--)
+        {
+            var w = Wires[i];
+            if (w.HitTestSegment(worldPos, out int s, out bool isH, 6f))
+            {
+                hitSegment = s;
+                hitSegHoriz = isH;
+                return w;
+            }
+            if (w.HitTest(worldPos, 8f))
+            {
+                var pts = w.GetPathPoints();
+                float bestDist = float.MaxValue;
+                for (int si = 0; si < pts.Count - 1; si++)
+                {
+                    float d = CircuitWire.DistanceToSegment(worldPos, pts[si], pts[si + 1]);
+                    if (d < bestDist)
+                    {
+                        bestDist = d;
+                        hitSegment = si;
+                        hitSegHoriz = MathF.Abs(pts[si].Y - pts[si + 1].Y) < 1f;
+                    }
+                }
+                return w;
+            }
+        }
+        return null;
+    }
+
+    private void SyncExternalConnectedWires(System.Collections.Generic.HashSet<string> selectedElementIds, System.Collections.Generic.HashSet<CircuitWire>? movingWires = null)
     {
         var movedWireIds = new System.Collections.Generic.HashSet<string>();
 
-        // Phase 1: Update direct pin-connected wires with 10px grid snap
         foreach (var w in Wires)
         {
-            if (w.StartElementId == el.Id && w.StartPinName != "WireTap")
-            {
-                var pin = el.Pins.FirstOrDefault(p => p.Name == w.StartPinName || p.Id == w.StartPinName);
-                if (pin != null)
-                {
-                    var pPos = el.GetPinWorldPosition(pin);
-                    w.StartX = pPos.X;
-                    w.StartY = pPos.Y;
-                    movedWireIds.Add(w.Id);
-                }
-            }
-            if (w.EndElementId == el.Id && w.EndPinName != "WireTap")
-            {
-                var pin = el.Pins.FirstOrDefault(p => p.Name == w.EndPinName || p.Id == w.EndPinName);
-                if (pin != null)
-                {
-                    var pPos = el.GetPinWorldPosition(pin);
-                    w.EndX = pPos.X;
-                    w.EndY = pPos.Y;
-                    movedWireIds.Add(w.Id);
-                }
-            }
-        }
+            if (movingWires != null && movingWires.Contains(w)) continue;
 
-        // Phase 2A: Branch wires starting or ending at el and tapping into a parent rail
-        // Protect parent trunk bus rails from distortion by sliding tap perpendicularly along rail
-        foreach (var w in Wires)
-        {
-            if (w.StartElementId == el.Id && w.EndPinName == "WireTap")
+            bool startIn = selectedElementIds.Contains(w.StartElementId);
+            bool endIn = selectedElementIds.Contains(w.EndElementId);
+
+            if (startIn && endIn) continue; // Internal wire handled rigidly
+            if (!startIn && !endIn) continue;
+
+            bool wireEndpointChanged = false;
+
+            if (startIn)
             {
-                var parent = Wires.FirstOrDefault(pw => pw.Id == w.EndElementId);
-                if (parent != null)
+                var el = FindElement(w.StartElementId);
+                if (el != null && w.StartPinName != "WireTap")
                 {
                     var pin = el.Pins.FirstOrDefault(p => p.Name == w.StartPinName || p.Id == w.StartPinName);
                     if (pin != null)
@@ -1847,17 +2051,26 @@ public sealed partial class CircuitCanvas : UserControl
                         var pPos = el.GetPinWorldPosition(pin);
                         w.StartX = pPos.X;
                         w.StartY = pPos.Y;
+                        wireEndpointChanged = true;
+                    }
+                }
+                if (w.EndPinName == "WireTap")
+                {
+                    var parent = Wires.FirstOrDefault(pw => pw.Id == w.EndElementId);
+                    if (parent != null)
+                    {
                         var newTap = parent.ProjectTapPerpendicular(new Vector2(w.StartX, w.StartY));
                         w.EndX = newTap.X;
                         w.EndY = newTap.Y;
-                        movedWireIds.Add(w.Id);
+                        wireEndpointChanged = true;
                     }
                 }
             }
-            else if (w.EndElementId == el.Id && w.StartPinName == "WireTap")
+
+            if (endIn)
             {
-                var parent = Wires.FirstOrDefault(pw => pw.Id == w.StartElementId);
-                if (parent != null)
+                var el = FindElement(w.EndElementId);
+                if (el != null && w.EndPinName != "WireTap")
                 {
                     var pin = el.Pins.FirstOrDefault(p => p.Name == w.EndPinName || p.Id == w.EndPinName);
                     if (pin != null)
@@ -1865,16 +2078,40 @@ public sealed partial class CircuitCanvas : UserControl
                         var pPos = el.GetPinWorldPosition(pin);
                         w.EndX = pPos.X;
                         w.EndY = pPos.Y;
+                        wireEndpointChanged = true;
+                    }
+                }
+                if (w.StartPinName == "WireTap")
+                {
+                    var parent = Wires.FirstOrDefault(pw => pw.Id == w.StartElementId);
+                    if (parent != null)
+                    {
                         var newTap = parent.ProjectTapPerpendicular(new Vector2(w.EndX, w.EndY));
                         w.StartX = newTap.X;
                         w.StartY = newTap.Y;
-                        movedWireIds.Add(w.Id);
+                        wireEndpointChanged = true;
+                    }
+                }
+            }
+
+            if (wireEndpointChanged)
+            {
+                movedWireIds.Add(w.Id);
+                if (w.Waypoints.Count > 0)
+                {
+                    if (w.Waypoints.Count <= 2)
+                    {
+                        w.Waypoints.Clear();
+                    }
+                    else
+                    {
+                        w.Waypoints = w.GetPathPoints().Skip(1).SkipLast(1).ToList();
                     }
                 }
             }
         }
 
-        // Phase 2B: Child wires tapping into parent wires that moved in Phase 1 or 2A
+        // Propagate tap positions for child wires tapping into external wires that moved
         bool anyUpdated;
         int maxPasses = 3;
         do
@@ -1882,7 +2119,6 @@ public sealed partial class CircuitCanvas : UserControl
             anyUpdated = false;
             foreach (var w in Wires)
             {
-                // Pure trunk rails or wires ending with _RAIL or _BUS are never child branches of feeder lines
                 if (w.Id.EndsWith("_RAIL", StringComparison.OrdinalIgnoreCase) ||
                     w.Id.EndsWith("_BUS", StringComparison.OrdinalIgnoreCase) ||
                     (string.IsNullOrEmpty(w.StartElementId) && string.IsNullOrEmpty(w.EndElementId)))
@@ -1919,7 +2155,61 @@ public sealed partial class CircuitCanvas : UserControl
         } while (anyUpdated && maxPasses > 0);
     }
 
-    private (CircuitWire Wire, Vector2 SnapPos)? FindWireTapAt(Vector2 worldPos, float tolerance = 8.0f)
+    private static bool RectsIntersect(Rect a, Rect b)
+    {
+        return a.Left <= b.Right && a.Right >= b.Left && a.Top <= b.Bottom && a.Bottom >= b.Top;
+    }
+
+    private static bool WireIntersectsBox(CircuitWire wire, Rect box)
+    {
+        var pts = wire.GetPathPoints();
+        if (pts.Count == 0) return false;
+
+        float minX = (float)box.Left;
+        float maxX = (float)box.Right;
+        float minY = (float)box.Top;
+        float maxY = (float)box.Bottom;
+
+        foreach (var p in pts)
+        {
+            if (p.X >= minX && p.X <= maxX && p.Y >= minY && p.Y <= maxY)
+                return true;
+        }
+
+        for (int i = 0; i < pts.Count - 1; i++)
+        {
+            var p1 = pts[i];
+            var p2 = pts[i + 1];
+
+            bool isH = MathF.Abs(p1.Y - p2.Y) < 1f;
+            if (isH)
+            {
+                float segY = p1.Y;
+                if (segY >= minY && segY <= maxY)
+                {
+                    float segMinX = MathF.Min(p1.X, p2.X);
+                    float segMaxX = MathF.Max(p1.X, p2.X);
+                    if (MathF.Max(minX, segMinX) <= MathF.Min(maxX, segMaxX))
+                        return true;
+                }
+            }
+            else
+            {
+                float segX = p1.X;
+                if (segX >= minX && segX <= maxX)
+                {
+                    float segMinY = MathF.Min(p1.Y, p2.Y);
+                    float segMaxY = MathF.Max(p1.Y, p2.Y);
+                    if (MathF.Max(minY, segMinY) <= MathF.Min(maxY, segMaxY))
+                        return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private (CircuitWire Wire, Vector2 SnapPos)? FindWireTapAt(Vector2 worldPos, float tolerance = 16.0f)
     {
         // Must be strictly outside pin keep-out zones (> 5.0px)
         foreach (var el in Elements)
@@ -2023,6 +2313,7 @@ public sealed partial class CircuitCanvas : UserControl
     }
 
     private void RotateSelected_Click(object sender, RoutedEventArgs e) => RotateSelected();
+    private void MirrorSelected_Click(object sender, RoutedEventArgs e) => MirrorSelected();
     private void DeleteSelected_Click(object sender, RoutedEventArgs e) => DeleteSelected();
     private void Deselect_Click(object sender, RoutedEventArgs e) => DeselectSelected();
 

@@ -1,0 +1,53 @@
+﻿{
+    "phase":  "after-fixed",
+    "exe":  "D:\\BJTU\\2026年大创\\apps\\desktop-winui\\bin\\_verify\\CircuitAssistant.exe",
+    "exeLastWriteTime":  "2026-10-18T17:23:28.6224393+08:00",
+    "capturedAt":  "2026-10-18T17:45:49.8755859+08:00",
+    "screenshots":  [
+                        {
+                            "name":  "debug-dialog",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\debug\\dlg-after-fixed-M01-nmos-common-source.circuit-before.png",
+                            "note":  "open dialog for M01-nmos-common-source.circuit"
+                        },
+                        {
+                            "name":  "debug-dialog-pasted",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\debug\\dlg-after-fixed-M01-nmos-common-source.circuit-pasted.png",
+                            "note":  "path pasted for M01-nmos-common-source.circuit"
+                        },
+                        {
+                            "name":  "14_mos_loaded",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\after-fixed\\14_mos_loaded.png",
+                            "note":  "M01 NMOS common-source template opened"
+                        },
+                        {
+                            "name":  "15_mos_derivation_full",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\after-fixed\\15_mos_derivation_full.png",
+                            "note":  "MOS derivation tab after solve (full window, scrolled to top)"
+                        },
+                        {
+                            "name":  "16_mos_derivation_panel",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\after-fixed\\16_mos_derivation_panel.png",
+                            "note":  "MOS derivation panel region region=(1270,299,642x807) hits=anchor=依据当前电路类型与模型假设生成教学推导：@(1320,389,549x22)"
+                        },
+                        {
+                            "name":  "16b_mos_formula_view_full",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\after-fixed\\16b_mos_formula_view_full.png",
+                            "note":  "MOS derivation scrolled to formula boxes (full window)"
+                        },
+                        {
+                            "name":  "17_mos_formula_region",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\after-fixed\\17_mos_formula_region.png",
+                            "note":  "MOS formula boxes region region=(1342,581,484x331) hits=符号推导(公式|公理).*定理方程@(1372,601,444x22); 数值代入@(1372,800,444x22)"
+                        },
+                        {
+                            "name":  "18_mos_metrics_full",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\after-fixed\\18_mos_metrics_full.png",
+                            "note":  "MOS metrics tab (Q point)"
+                        },
+                        {
+                            "name":  "19_mos_qpoint_region",
+                            "path":  "D:\\BJTU\\2026年大创\\tools\\ui-verify\\evidence\\after-fixed\\19_mos_qpoint_region.png",
+                            "note":  "MOS Q point card region region=(1317,398,291x243) hits=直流静态工作点@(1372,413,226x26); 基极静态电流@(1342,454,165x26); 集电极电流@(1342,492,165x26); 管压降@(1342,530,165x26)"
+                        }
+                    ]
+}
